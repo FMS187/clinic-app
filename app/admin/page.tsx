@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   Plus, Trash2, Calendar, Phone, 
   MapPin, Shield, Lock, Stethoscope, 
-  Clock, AlertCircle, Loader2, LogOut, Mail
+  Clock, AlertCircle, Loader2, LogOut, Mail, Settings, CheckCircle2
 } from 'lucide-react';
 
 interface Doctor {
@@ -14,7 +14,6 @@ interface Doctor {
   specialty: string;
   category: 'dental' | 'derma';
   branch: string;
-  phone?: string;
 }
 
 export default function AdminDashboard() {
@@ -26,19 +25,25 @@ export default function AdminDashboard() {
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'doctors' | 'bookings'>('doctors');
+  const [activeTab, setActiveTab] = useState<'doctors' | 'bookings' | 'settings'>('doctors');
 
+  // بيانات الأطباء والحجوزات
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
 
+  // إعدادات العيادة (رقم الواتساب)
+  const [clinicPhone, setClinicPhone] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
+
+  // نموذج إضافة طبيب (تمت إزالة خانة الهاتف)
   const [newDoctor, setNewDoctor] = useState({
     name: '',
     specialty: '',
     category: 'dental' as 'dental' | 'derma',
-    branch: 'صنعاء - فرع حدة',
-    phone: ''
+    branch: 'صنعاء - فرع حدة'
   });
 
   useEffect(() => {
@@ -55,6 +60,7 @@ export default function AdminDashboard() {
       if (session?.user) {
         fetchDoctors();
         fetchBookings();
+        fetchClinicSettings();
       }
     });
 
@@ -67,6 +73,7 @@ export default function AdminDashboard() {
     if (user) {
       fetchDoctors();
       fetchBookings();
+      fetchClinicSettings();
     }
   }, [user]);
 
@@ -93,6 +100,39 @@ export default function AdminDashboard() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
+  };
+
+  const fetchClinicSettings = async () => {
+    const { data } = await supabase
+      .from('ClinicSettings')
+      .select('clinic_phone')
+      .eq('id', 1)
+      .single();
+
+    if (data?.clinic_phone) {
+      setClinicPhone(data.clinic_phone);
+    }
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    setSettingsSuccess(false);
+
+    // تنظيف الرقم من أي رموز زائدة
+    const cleaned = clinicPhone.replace(/[^0-9]/g, '');
+
+    const { error } = await supabase
+      .from('ClinicSettings')
+      .upsert({ id: 1, clinic_phone: cleaned });
+
+    if (!error) {
+      setSettingsSuccess(true);
+      setTimeout(() => setSettingsSuccess(false), 3000);
+    } else {
+      alert('حدث خطأ أثناء حفظ الرقم');
+    }
+    setSavingSettings(false);
   };
 
   const fetchDoctors = async () => {
@@ -132,8 +172,7 @@ export default function AdminDashboard() {
         name: '',
         specialty: '',
         category: 'dental',
-        branch: 'صنعاء - فرع حدة',
-        phone: ''
+        branch: 'صنعاء - فرع حدة'
       });
       alert('تم حفظ بيانات الطبيب بنجاح');
     } else {
@@ -250,6 +289,14 @@ export default function AdminDashboard() {
               >
                 المواعيد ({bookings.length})
               </button>
+              <button
+                onClick={() => { setActiveTab('settings'); fetchClinicSettings(); }}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1 ${
+                  activeTab === 'settings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5" /> إعدادات العيادة
+              </button>
             </div>
 
             <button
@@ -262,6 +309,7 @@ export default function AdminDashboard() {
           </div>
         </header>
 
+        {/* 1. تبويب إدارة الأطباء والتخصصات */}
         {activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -293,28 +341,16 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">القسم</label>
-                    <select
-                      value={newDoctor.category}
-                      onChange={(e) => setNewDoctor({ ...newDoctor, category: e.target.value as any })}
-                      className="w-full p-2.5 border border-slate-300 rounded-xl text-sm bg-white outline-none"
-                    >
-                      <option value="dental">طب الأسنان</option>
-                      <option value="derma">الجلدية والتجميل</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">الهاتف</label>
-                    <input
-                      type="tel"
-                      placeholder="77xxxxxxx"
-                      value={newDoctor.phone}
-                      onChange={(e) => setNewDoctor({ ...newDoctor, phone: e.target.value })}
-                      className="w-full p-2.5 border border-slate-300 rounded-xl text-sm outline-none"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">القسم الطبي</label>
+                  <select
+                    value={newDoctor.category}
+                    onChange={(e) => setNewDoctor({ ...newDoctor, category: e.target.value as any })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-sm bg-white outline-none"
+                  >
+                    <option value="dental">طب الأسنان</option>
+                    <option value="derma">الجلدية والتجميل</option>
+                  </select>
                 </div>
 
                 <div>
@@ -375,15 +411,10 @@ export default function AdminDashboard() {
                         <p className="text-xs text-slate-600 mt-1 font-medium">{doc.specialty}</p>
                       </div>
 
-                      <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+                      <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500">
                         <div className="flex items-center gap-1">
                           <MapPin className="w-3.5 h-3.5 text-slate-400" /> {doc.branch}
                         </div>
-                        {doc.phone && (
-                          <div className="flex items-center gap-1">
-                            <Phone className="w-3.5 h-3.5 text-slate-400" /> {doc.phone}
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -393,6 +424,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* 2. تبويب جدول المواعيد والحجوزات */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -425,7 +457,7 @@ export default function AdminDashboard() {
                       <th className="p-3">الطبيب</th>
                       <th className="p-3">الفرع</th>
                       <th className="p-3">الموعد</th>
-                      <th className="p-3">إجراء وتواصل</th>
+                      <th className="p-3">تواصل</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -443,7 +475,7 @@ export default function AdminDashboard() {
                         `🩺 الخدمة: ${b.service_name}\n` +
                         `👨‍⚕️ الطبيب: ${b.doctor_name}\n` +
                         `📅 الموعد: ${b.booking_date} الساعة ${b.booking_time}\n\n` +
-                        `يرجى تأكيد الحضور قبل الموعد بنصف ساعة. نتمنى لك دوام الصحة والعافية!`
+                        `يرجى تأكيد الحضور قبل الموعد بنصف ساعة.`
                       );
 
                       const patientWaLink = `https://wa.me/${cleanPhone}?text=${adminReplyMessage}`;
@@ -451,7 +483,10 @@ export default function AdminDashboard() {
                       return (
                         <tr key={i} className="hover:bg-slate-50/80">
                           <td className="p-3 font-bold text-slate-900">{b.patient_name || 'غير محدد'}</td>
-                          <td className="p-3 text-slate-600 font-mono">{b.patient_phone || '-'}</td>
+                          <td className="p-3 text-slate-600 font-mono">
+                            <span className="text-slate-400 text-[11px] ltr inline-block mr-1">+967</span>
+                            {b.patient_phone || '-'}
+                          </td>
                           <td className="p-3 text-teal-700 font-medium">{b.service_name || '-'}</td>
                           <td className="p-3 text-slate-800">{b.doctor_name || '-'}</td>
                           <td className="p-3 text-slate-600">{b.branch_name || '-'}</td>
@@ -461,10 +496,10 @@ export default function AdminDashboard() {
                               href={patientWaLink}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg border border-emerald-200 text-xs font-bold transition shadow-sm"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg border border-emerald-200 text-xs font-bold transition shadow-sm"
                             >
                               <Phone className="w-3.5 h-3.5" />
-                              تأكيد بالواتساب
+                              واتساب المريض
                             </a>
                           </td>
                         </tr>
@@ -474,6 +509,52 @@ export default function AdminDashboard() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 3. تبويب إعدادات العيادة (رقم الواتساب الرسمي المعتمد) */}
+        {activeTab === 'settings' && (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
+            <div className="border-b border-slate-100 pb-3">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-teal-600" /> إعدادات وتواصل العيادة
+              </h2>
+              <p className="text-slate-500 text-xs mt-1">تحديد رقم الواتساب الرسمي الذي ستصل إليه رسائل الحجز من جميع المرضى</p>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">رقم واتساب العيادة المعتمد</label>
+                <div className="relative flex items-center">
+                  <div className="bg-slate-100 border border-l-0 border-slate-300 rounded-r-xl px-3 py-3 text-sm text-slate-600 font-bold flex items-center gap-1" dir="ltr">
+                    <span>🇾🇪 +967</span>
+                  </div>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="77xxxxxxx"
+                    value={clinicPhone}
+                    onChange={(e) => setClinicPhone(e.target.value)}
+                    className="w-full p-3 border border-slate-300 rounded-l-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none font-mono"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">أدخل الرقم بدون الصفر الأول (مثال: 771234567)</p>
+              </div>
+
+              {settingsSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> تم تحديث رقم العيادة بنجاح!
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={savingSettings}
+                className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm transition flex items-center justify-center gap-2 shadow-md shadow-teal-600/20"
+              >
+                {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ الرقم المعتمد للعيادة'}
+              </button>
+            </form>
           </div>
         )}
 
