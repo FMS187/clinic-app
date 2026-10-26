@@ -5,11 +5,11 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   UserCheck, Plus, Trash2, Calendar, Phone, 
   MapPin, Shield, Search, Lock, Stethoscope, 
-  CheckCircle, Clock, AlertCircle
+  CheckCircle, Clock, AlertCircle, Loader2
 } from 'lucide-react';
 
 interface Doctor {
-  id: string;
+  id: string | number;
   name: string;
   specialty: string;
   category: 'dental' | 'derma';
@@ -22,18 +22,11 @@ export default function AdminDashboard() {
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState(false);
 
-  // تبويبات لوحة التحكم
   const [activeTab, setActiveTab] = useState<'doctors' | 'bookings'>('doctors');
 
-  // بيانات الأطباء (بيانات أولية مع إمكانية الإضافة والحذف)
-  const [doctors, setDoctors] = useState<Doctor[]>([
-    { id: '1', name: 'د. سامي المقطري', specialty: 'جراحة وتجميل الفم والأسنان', category: 'dental', branch: 'صنعاء - فرع حدة', phone: '771000001' },
-    { id: '2', name: 'د. مروة الشرجبي', specialty: 'تقويم وتجميل الأسنان الرقمي', category: 'dental', branch: 'صنعاء - الستين والسبعين', phone: '771000002' },
-    { id: '3', name: 'د. لمياء اليافعي', specialty: 'الأمراض الجلدية والليزر والحقن التجميلي', category: 'derma', branch: 'عدن - خور مكسر', phone: '731000001' },
-    { id: '4', name: 'د. حسام العديني', specialty: 'العلاج بالليزر والعناية بالبشرة والندبات', category: 'derma', branch: 'عدن - المنصورة', phone: '731000002' }
-  ]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [loadingDoctors, setLoadingDoctors] = useState(false);
 
-  // نموذج إضافة طبيب جديد
   const [newDoctor, setNewDoctor] = useState({
     name: '',
     specialty: '',
@@ -42,67 +35,83 @@ export default function AdminDashboard() {
     phone: ''
   });
 
-  // الحجوزات الواردة
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
 
-  // التحقق من كلمة المرور
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // كلمة مرور افتراضية للإدارة (يمكنك تغييرها)
     if (passwordInput === 'admin1234') {
       setIsAuthenticated(true);
       setAuthError(false);
+      fetchDoctors();
       fetchBookings();
     } else {
       setAuthError(true);
     }
   };
 
+  // جلب الأطباء من Supabase
+  const fetchDoctors = async () => {
+    setLoadingDoctors(true);
+    const { data, error } = await supabase
+      .from('Doctor')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (data && !error) {
+      setDoctors(data);
+    }
+    setLoadingDoctors(false);
+  };
+
   // جلب الحجوزات من Supabase
   const fetchBookings = async () => {
     setLoadingBookings(true);
-    try {
-      const { data, error } = await supabase
-        .from('Booking')
-        .select('*')
-        .order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('Booking')
+      .select('*')
+      .order('id', { ascending: false });
 
-      if (data && !error) {
-        setBookings(data);
-      }
-    } catch (err) {
-      console.log('Error fetching bookings', err);
+    if (data && !error) {
+      setBookings(data);
     }
     setLoadingBookings(false);
   };
 
-  // إضافة طبيب جديد للقائمة
-  const handleAddDoctor = (e: React.FormEvent) => {
+  // إضافة طبيب وحفظه في Supabase
+  const handleAddDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDoctor.name || !newDoctor.specialty) return;
 
-    const doctorEntry: Doctor = {
-      id: Date.now().toString(),
-      ...newDoctor
-    };
+    const { data, error } = await supabase
+      .from('Doctor')
+      .insert([newDoctor])
+      .select();
 
-    setDoctors([doctorEntry, ...doctors]);
-    setNewDoctor({
-      name: '',
-      specialty: '',
-      category: 'dental',
-      branch: 'صنعاء - فرع حدة',
-      phone: ''
-    });
+    if (data && !error) {
+      setDoctors([data[0], ...doctors]);
+      setNewDoctor({
+        name: '',
+        specialty: '',
+        category: 'dental',
+        branch: 'صنعاء - فرع حدة',
+        phone: ''
+      });
+      alert('تم حفظ الطبيب بنجاح في قاعدة البيانات');
+    } else {
+      alert('حدث خطأ أثناء حفظ الطبيب، تأكد من إعدادات Supabase');
+    }
   };
 
-  // حذف طبيب
-  const handleDeleteDoctor = (id: string) => {
-    setDoctors(doctors.filter(d => d.id !== id));
+  // حذف طبيب من Supabase
+  const handleDeleteDoctor = async (id: string | number) => {
+    if (!confirm('هل أنت متأكد من حذف هذا الطبيب؟')) return;
+    const { error } = await supabase.from('Doctor').delete().eq('id', id);
+    if (!error) {
+      setDoctors(doctors.filter(d => d.id !== id));
+    }
   };
 
-  // شاشة تسجيل الدخول
   if (!isAuthenticated) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -144,7 +153,6 @@ export default function AdminDashboard() {
     <main className="min-h-screen bg-slate-100 text-slate-800 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* شريط الإدارة العلوي */}
         <header className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -154,7 +162,7 @@ export default function AdminDashboard() {
           </div>
           <div className="flex gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200 w-full sm:w-auto">
             <button
-              onClick={() => setActiveTab('doctors')}
+              onClick={() => { setActiveTab('doctors'); fetchDoctors(); }}
               className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs sm:text-sm transition ${
                 activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
@@ -167,16 +175,14 @@ export default function AdminDashboard() {
                 activeTab === 'bookings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              جدول المواعيد والحجوزات
+              جدول المواعيد والحجوزات ({bookings.length})
             </button>
           </div>
         </header>
 
-        {/* 1. قسم الكادر الطبي والتخصصات */}
         {activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* نموذج إضافة طبيب جديد */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
                 <Plus className="w-5 h-5 text-teal-600" /> إضافة طبيب / تخصص جديد
@@ -219,7 +225,7 @@ export default function AdminDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف (اختياري)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">الهاتف (اختياري)</label>
                     <input
                       type="tel"
                       placeholder="77xxxxxxx"
@@ -248,62 +254,70 @@ export default function AdminDashboard() {
                   type="submit"
                   className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm transition mt-2 flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/20"
                 >
-                  <Plus className="w-4 h-4" /> حفظ بيانات الطبيب
+                  <Plus className="w-4 h-4" /> حفظ بيانات الطبيب في النظام
                 </button>
               </form>
             </div>
 
-            {/* قائمة الأطباء الحالية */}
             <div className="lg:col-span-2 space-y-3">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Stethoscope className="w-5 h-5 text-teal-600" /> قائمة الأطباء والتخصصات المعتمدة
+              <h2 className="text-lg font-bold text-slate-900 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Stethoscope className="w-5 h-5 text-teal-600" /> قائمة الأطباء المعتمدة
+                </span>
+                <button onClick={fetchDoctors} className="text-xs text-teal-700 bg-teal-50 px-3 py-1 rounded-lg border border-teal-200">
+                  تحديث
+                </button>
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {doctors.map((doc) => (
-                  <div key={doc.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                          doc.category === 'dental' ? 'bg-teal-50 text-teal-700' : 'bg-rose-50 text-rose-700'
-                        }`}>
-                          {doc.category === 'dental' ? 'طب الأسنان' : 'الجلدية والتجميل'}
-                        </span>
-                        <button
-                          onClick={() => handleDeleteDoctor(doc.id)}
-                          className="text-slate-400 hover:text-rose-600 transition"
-                          title="حذف الطبيب"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <h3 className="font-bold text-slate-900 text-base">{doc.name}</h3>
-                      <p className="text-xs text-slate-600 mt-1 font-medium">{doc.specialty}</p>
-                    </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" /> {doc.branch}
-                      </div>
-                      {doc.phone && (
-                        <div className="flex items-center gap-1">
-                          <Phone className="w-3.5 h-3.5 text-slate-400" /> {doc.phone}
+              {loadingDoctors ? (
+                <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-600 mx-auto" /></div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {doctors.map((doc) => (
+                    <div key={doc.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                            doc.category === 'dental' ? 'bg-teal-50 text-teal-700' : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {doc.category === 'dental' ? 'طب الأسنان' : 'الجلدية والتجميل'}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteDoctor(doc.id)}
+                            className="text-slate-400 hover:text-rose-600 transition"
+                            title="حذف الطبيب"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-                      )}
+                        <h3 className="font-bold text-slate-900 text-base">{doc.name}</h3>
+                        <p className="text-xs text-slate-600 mt-1 font-medium">{doc.specialty}</p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400" /> {doc.branch}
+                        </div>
+                        {doc.phone && (
+                          <div className="flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5 text-slate-400" /> {doc.phone}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>
         )}
 
-        {/* 2. قسم متابعة الحجوزات */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-600" /> المواعيد المحجوزة
+                <Calendar className="w-5 h-5 text-teal-600" /> المواعيد المسجلة في النظام
               </h2>
               <button 
                 onClick={fetchBookings}
@@ -314,11 +328,11 @@ export default function AdminDashboard() {
             </div>
 
             {loadingBookings ? (
-              <p className="text-center py-8 text-slate-400 text-sm">جاري جلب المواعيد...</p>
+              <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-600 mx-auto" /></div>
             ) : bookings.length === 0 ? (
               <div className="text-center py-10 space-y-2">
                 <Clock className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-slate-500 text-sm">لا توجد حجوزات مسجلة بعد، أو جاري مزامنة قاعدة البيانات.</p>
+                <p className="text-slate-500 text-sm">لا توجد حجوزات مسجلة بعد في قاعدة البيانات.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -331,17 +345,19 @@ export default function AdminDashboard() {
                       <th className="p-3">الطبيب</th>
                       <th className="p-3">الفرع</th>
                       <th className="p-3">تاريخ ووقت الموعد</th>
+                      <th className="p-3">طريقة الدفع</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {bookings.map((b, i) => (
                       <tr key={i} className="hover:bg-slate-50/80">
                         <td className="p-3 font-bold text-slate-900">{b.patient_name || 'غير محدد'}</td>
-                        <td className="p-3 text-slate-600">{b.patient_phone || '-'}</td>
+                        <td className="p-3 text-slate-600 font-mono">{b.patient_phone || '-'}</td>
                         <td className="p-3 text-teal-700 font-medium">{b.service_name || '-'}</td>
                         <td className="p-3 text-slate-800">{b.doctor_name || '-'}</td>
                         <td className="p-3 text-slate-600">{b.branch_name || '-'}</td>
                         <td className="p-3 text-slate-800 font-mono font-medium">{b.booking_date} {b.booking_time}</td>
+                        <td className="p-3 text-slate-600 text-xs">{b.payment_method === 'PAY_ONLINE' ? 'دفع إلكتروني' : 'عند الحضور'}</td>
                       </tr>
                     ))}
                   </tbody>
