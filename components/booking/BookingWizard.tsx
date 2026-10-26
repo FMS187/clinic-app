@@ -90,14 +90,6 @@ const CLINIC_SERVICES = {
   ]
 };
 
-// الأطباء والاستشاريون
-const CLINIC_DOCTORS = [
-  { id: 'doc1', name: 'د. سامي المقطري', title: 'استشاري جراحة وتجميل الفم والأسنان', category: 'dental', rating: '4.9' },
-  { id: 'doc2', name: 'د. مروة الشرجبي', title: 'أخصائية تقويم وتجميل الأسنان الرقمي', category: 'dental', rating: '4.8' },
-  { id: 'doc3', name: 'د. لمياء اليافعي', title: 'استشارية الأمراض الجلدية والليزر والحقن التجميلي', category: 'derma', rating: '5.0' },
-  { id: 'doc4', name: 'د. حسام العديني', title: 'أخصائي العلاج بالليزر والعناية بالبشرة والندبات', category: 'derma', rating: '4.9' }
-];
-
 const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -135,7 +127,6 @@ export default function BookingWizard() {
 
   return (
     <div className="flex flex-col">
-      {/* شريط الإنجاز العلوي */}
       <div className="bg-slate-100 h-2 w-full">
         <div 
           className="bg-teal-600 h-2 transition-all duration-500 ease-in-out" 
@@ -143,7 +134,6 @@ export default function BookingWizard() {
         />
       </div>
 
-      {/* مؤشر الخطوات */}
       <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex justify-between text-xs sm:text-sm font-medium text-slate-500 overflow-x-auto">
         <span className={step >= 1 ? 'text-teal-700 font-bold' : ''}>1. الفرع والخريطة</span>
         <span className={step >= 2 ? 'text-teal-700 font-bold' : ''}>2. الخدمة والطبيب</span>
@@ -164,7 +154,7 @@ export default function BookingWizard() {
   );
 }
 
-// 1. اختيار الفرع وعرض الخريطة الداخلية التفاعلية لليمن
+// 1. اختيار الفرع وعرض الخريطة
 function Step1BranchLocation({ data, update, next }: any) {
   const [branches, setBranches] = useState(YEMEN_BRANCHES);
   const [selectedBranch, setSelectedBranch] = useState(
@@ -211,7 +201,6 @@ function Step1BranchLocation({ data, update, next }: any) {
     );
   };
 
-  // رابط الخريطة الداخلية التفاعلية المضمنة مباشرة (OpenStreetMap) دون مفاتيح API
   const mapIframeUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${selectedBranch.lng - 0.015}%2C${selectedBranch.lat - 0.015}%2C${selectedBranch.lng + 0.015}%2C${selectedBranch.lat + 0.015}&layer=mapnik&marker=${selectedBranch.lat}%2C${selectedBranch.lng}`;
 
   return (
@@ -233,7 +222,6 @@ function Step1BranchLocation({ data, update, next }: any) {
         </button>
       </div>
 
-      {/* الخريطة الداخلية المدمجة */}
       <div className="bg-slate-100 rounded-2xl overflow-hidden border border-slate-300 shadow-inner">
         <div className="bg-slate-800 text-white text-xs px-4 py-2 flex items-center justify-between">
           <span className="flex items-center gap-1.5 font-medium">
@@ -252,7 +240,6 @@ function Step1BranchLocation({ data, update, next }: any) {
         </div>
       </div>
 
-      {/* قائمة الفروع */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {branches.map(branch => {
           const isSelected = selectedBranch.id === branch.id;
@@ -300,12 +287,40 @@ function Step1BranchLocation({ data, update, next }: any) {
   );
 }
 
-// 2. أقسام التجميل والأسنان الموسعة مع اختيار الطبيب
+// 2. الخدمات واختيار الأطباء ديناميكياً من Supabase
 function Step2ExpandedServices({ data, update, next, prev }: any) {
   const [activeTab, setActiveTab] = useState<'dental' | 'derma'>(data.category || 'dental');
-  
+  const [dbDoctors, setDbDoctors] = useState<any[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+
+  // جلب الأطباء الحقيقيين من Supabase
+  useEffect(() => {
+    const loadDoctorsFromSupabase = async () => {
+      setLoadingDocs(true);
+      const { data: doctorsData, error } = await supabase
+        .from('Doctor')
+        .select('*');
+
+      if (!error && doctorsData && doctorsData.length > 0) {
+        setDbDoctors(doctorsData);
+      } else {
+        // قائمة احتياطية في حال تعذر الاتصال
+        setDbDoctors([
+          { id: 'doc1', name: 'د. سامي المقطري', specialty: 'استشاري جراحة وتجميل الفم والأسنان', category: 'dental' },
+          { id: 'doc2', name: 'د. مروة الشرجبي', specialty: 'أخصائية تقويم وتجميل الأسنان الرقمي', category: 'dental' },
+          { id: 'doc3', name: 'د. لمياء اليافعي', specialty: 'استشارية الأمراض الجلدية والليزر والحقن التجميلي', category: 'derma' },
+          { id: 'doc4', name: 'د. حسام العديني', specialty: 'أخصائي العلاج بالليزر والعناية بالبشرة والندبات', category: 'derma' }
+        ]);
+      }
+      setLoadingDocs(false);
+    };
+
+    loadDoctorsFromSupabase();
+  }, []);
+
   const currentServices = CLINIC_SERVICES[activeTab];
-  const eligibleDoctors = CLINIC_DOCTORS.filter(d => d.category === activeTab);
+  // تصفية الأطباء بحسب القسم النشط (أسنان أو جلدية)
+  const eligibleDoctors = dbDoctors.filter(d => d.category === activeTab);
 
   const handleCategorySwitch = (cat: 'dental' | 'derma') => {
     setActiveTab(cat);
@@ -329,7 +344,6 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
         <p className="text-slate-500 text-sm mt-1">نخبة من الاستشاريين وأحدث التقنيات الطبية الحديثة</p>
       </div>
 
-      {/* تبويبات الأقسام */}
       <div className="grid grid-cols-2 gap-3 bg-slate-100 p-1.5 rounded-2xl">
         <button
           onClick={() => handleCategorySwitch('dental')}
@@ -349,7 +363,6 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
         </button>
       </div>
 
-      {/* قائمة الخدمات التابعة للقسم */}
       <div className="space-y-3">
         <h3 className="font-semibold text-slate-700 text-sm">الخدمات التخصصية المتاحة:</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -385,35 +398,38 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
         </div>
       </div>
 
-      {/* الأطباء المتاحون */}
       {data.serviceId && (
         <div className="pt-4 border-t border-slate-200 space-y-3">
           <h3 className="font-semibold text-slate-700 text-sm">اختر الطبيب المعالج:</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {eligibleDoctors.map(doc => {
-              const isSelected = data.doctorId === doc.id;
-              return (
-                <div
-                  key={doc.id}
-                  onClick={() => update({ doctorId: doc.id, doctorName: doc.name, doctorTitle: doc.title })}
-                  className={`p-4 rounded-2xl border-2 cursor-pointer flex items-center gap-3 transition-all ${
-                    isSelected ? 'border-teal-600 bg-teal-50 shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <div className="w-12 h-12 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg">
-                    {doc.name.charAt(3)}
-                  </div>
-                  <div className="flex-grow">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-slate-900 text-sm">{doc.name}</h4>
-                      <span className="text-xs text-amber-500 font-bold flex items-center gap-0.5">★ {doc.rating}</span>
+          {loadingDocs ? (
+            <div className="text-center py-6"><Loader2 className="w-6 h-6 animate-spin text-teal-600 mx-auto" /></div>
+          ) : eligibleDoctors.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3">لا يوجد أطباء مضافون لهذا القسم حالياً.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {eligibleDoctors.map(doc => {
+                const isSelected = String(data.doctorId) === String(doc.id);
+                return (
+                  <div
+                    key={doc.id}
+                    onClick={() => update({ doctorId: doc.id, doctorName: doc.name, doctorTitle: doc.specialty })}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer flex items-center gap-3 transition-all ${
+                      isSelected ? 'border-teal-600 bg-teal-50 shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="w-12 h-12 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                      {doc.name.charAt(3) || doc.name.charAt(0)}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">{doc.title}</p>
+                    <div className="flex-grow">
+                      <h4 className="font-bold text-slate-900 text-sm">{doc.name}</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">{doc.specialty}</p>
+                      {doc.branch && <span className="text-[10px] text-teal-600 font-medium block mt-1">{doc.branch}</span>}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -422,7 +438,7 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
   );
 }
 
-// 3. التاريخ والوقت وبيانات الاتصال
+// 3. الموعد والبيانات
 function Step3Schedule({ data, update, next, prev }: any) {
   const times = [
     '09:30 صباحاً', '10:30 صباحاً', '11:30 صباحاً',
@@ -576,7 +592,7 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
   );
 }
 
-// 5. مراجعة الحجز وطريقة الدفع
+// 5. مراجعة الحجز والحفظ في Supabase
 function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: any) {
   const confirmReservation = async () => {
     setLoading(true);
@@ -664,95 +680,4 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           />
           <div>
             <span className="font-bold text-slate-900 block text-sm">سداد العربون عبر الحوالات السريعة / المحافظ الإلكترونية (${data.depositAmount})</span>
-            <span className="text-xs text-slate-500">حجز أولوية فوري بدون انتظار في الاستقبال</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex gap-3 pt-4 border-t border-slate-100">
-        <button onClick={prev} disabled={loading} className="px-5 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">
-          رجوع
-        </button>
-        <button 
-          onClick={confirmReservation} 
-          disabled={loading}
-          className="flex-1 py-4 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20"
-        >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
-          تأكيد الموعد النهائي
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// 6. شاشة النجاح مع رابط Google Maps للتوجيه المباشر
-function Step6SuccessDirectMaps({ data }: any) {
-  const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${data.branchLat},${data.branchLng}&travelmode=driving`;
-
-  return (
-    <div className="text-center py-6 space-y-6">
-      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-        <CheckCircle className="w-9 h-9" />
-      </div>
-
-      <div>
-        <h2 className="text-2xl font-black text-slate-900">تم تسجيل موعدك بنجاح!</h2>
-        <p className="text-slate-500 text-sm mt-1">
-          أهلاً بك يا {data.patientName}، نحن بانتظار تشريفك في {data.branchName}
-        </p>
-      </div>
-
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-right max-w-sm mx-auto space-y-2 text-xs sm:text-sm">
-        <div className="flex justify-between">
-          <span className="text-slate-400">رقم الحجز:</span>
-          <span className="font-mono font-bold text-teal-700">#YE-{Math.floor(10000 + Math.random() * 90000)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-400">الفرع:</span>
-          <span className="font-bold text-slate-800">{data.branchName} ({data.branchCity})</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-400">الخدمة:</span>
-          <span className="font-bold text-slate-800">{data.serviceName}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-400">الموعد المحدد:</span>
-          <span className="font-bold text-slate-800">{data.date} الساعة {data.timeSlot}</span>
-        </div>
-      </div>
-
-      <div className="pt-2">
-        <a 
-          href={gmapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 w-full max-w-sm py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition shadow-xl"
-        >
-          <Navigation className="w-5 h-5 text-teal-400" />
-          التوجه الآن عبر Google Maps
-        </a>
-        <p className="text-slate-400 text-xs mt-3">سيتم فتح نظام الملاحة المباشر للعيادة على هاتفك فوراً</p>
-      </div>
-    </div>
-  );
-}
-
-function WizardButtons({ prev, next, nextDisabled = false, nextText = "متابعة" }: any) {
-  return (
-    <div className="flex gap-3 pt-6 border-t border-slate-100">
-      {prev && (
-        <button onClick={prev} className="px-5 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
-          رجوع
-        </button>
-      )}
-      <button 
-        onClick={next} 
-        disabled={nextDisabled}
-        className="flex-1 py-3.5 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20"
-      >
-        {nextText} <ChevronLeft className="w-5 h-5" />
-      </button>
-    </div>
-  );
-}
+            <span className
