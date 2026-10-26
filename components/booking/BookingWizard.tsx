@@ -14,6 +14,7 @@ type BookingState = {
   branchId: string;
   branchName: string;
   branchCity: string;
+  branchPhone: string;
   branchLat: number;
   branchLng: number;
   category: 'dental' | 'derma';
@@ -32,6 +33,7 @@ type BookingState = {
   paymentMethod: 'PAY_ONLINE' | 'PAY_AT_CLINIC';
 };
 
+// فروع العيادات مع أرقام الواتساب المعتمدة برمز دولة اليمن (967)
 const YEMEN_BRANCHES = [
   { 
     id: 'b-sanaa-1', 
@@ -40,7 +42,7 @@ const YEMEN_BRANCHES = [
     address: 'شارع حدة، بجوار مركز الكميم، صنعاء', 
     lat: 15.3188, 
     lng: 44.1852,
-    phone: '01-411222'
+    phone: '967770000001'
   },
   { 
     id: 'b-sanaa-2', 
@@ -49,7 +51,7 @@ const YEMEN_BRANCHES = [
     address: 'تقاطع الستين الجنوبي، مقابل حديقة السبعين', 
     lat: 15.3340, 
     lng: 44.2050,
-    phone: '01-244333'
+    phone: '967770000002'
   },
   { 
     id: 'b-aden-1', 
@@ -58,7 +60,7 @@ const YEMEN_BRANCHES = [
     address: 'حي السفارات، بجوار فندق عدن، خور مكسر', 
     lat: 12.8275, 
     lng: 45.0390,
-    phone: '02-233444'
+    phone: '967730000001'
   },
   { 
     id: 'b-aden-2', 
@@ -67,7 +69,7 @@ const YEMEN_BRANCHES = [
     address: 'شارع التسعين، ريمي، المنصورة', 
     lat: 12.8630, 
     lng: 44.9850,
-    phone: '02-388555'
+    phone: '967730000002'
   }
 ];
 
@@ -108,6 +110,7 @@ export default function BookingWizard() {
     branchId: YEMEN_BRANCHES[0].id,
     branchName: YEMEN_BRANCHES[0].name,
     branchCity: YEMEN_BRANCHES[0].city,
+    branchPhone: YEMEN_BRANCHES[0].phone,
     branchLat: YEMEN_BRANCHES[0].lat,
     branchLng: YEMEN_BRANCHES[0].lng,
     mediaKeys: [],
@@ -165,6 +168,7 @@ function Step1BranchLocation({ data, update, next }: any) {
       branchId: b.id,
       branchName: b.name,
       branchCity: b.city,
+      branchPhone: b.phone,
       branchLat: b.lat,
       branchLng: b.lng
     });
@@ -259,8 +263,8 @@ function Step1BranchLocation({ data, update, next }: any) {
                   <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-slate-400" /> {branch.address}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                    <PhoneCall className="w-3.5 h-3.5 text-slate-400" /> {branch.phone}
+                  <p className="text-xs text-emerald-700 font-mono mt-1 flex items-center gap-1">
+                    <PhoneCall className="w-3.5 h-3.5 text-emerald-600" /> واتساب: +{branch.phone}
                   </p>
                 </div>
                 {dist !== undefined && (
@@ -439,7 +443,6 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
   );
 }
 
-// 3. الموعد مع فحص الأوقات المحجوزة مسبقاً وتعطيلها
 function Step3Schedule({ data, update, next, prev }: any) {
   const times = [
     '09:30 صباحاً', '10:30 صباحاً', '11:30 صباحاً',
@@ -449,7 +452,6 @@ function Step3Schedule({ data, update, next, prev }: any) {
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [checkingSlots, setCheckingSlots] = useState(false);
 
-  // جلب الأوقات التي تم حجزها بالفعل لهذا الطبيب في هذا اليوم المحدد
   useEffect(() => {
     const fetchBookedTimes = async () => {
       if (!data.date || !data.doctorName) return;
@@ -465,7 +467,6 @@ function Step3Schedule({ data, update, next, prev }: any) {
         const reserved = existingBookings.map(b => b.booking_time);
         setBookedSlots(reserved);
 
-        // إذا كان الوقت المختار مسبقاً محجوزاً، نلغي اختياره
         if (data.timeSlot && reserved.includes(data.timeSlot)) {
           update({ timeSlot: undefined });
         }
@@ -476,7 +477,7 @@ function Step3Schedule({ data, update, next, prev }: any) {
     fetchBookedTimes();
   }, [data.date, data.doctorName]);
 
-  const isValid = data.date && data.timeSlot && data.patientName && data.patientPhone;
+  const isValid = data.date && data.timeSlot && data.patientName && data.patientPhone && data.patientPhone.length >= 9;
 
   return (
     <div className="space-y-6">
@@ -501,14 +502,22 @@ function Step3Schedule({ data, update, next, prev }: any) {
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف أو الواتساب (للتأكيد)</label>
-          <input 
-            type="tel" 
-            placeholder="مثال: 771234567 أو 731234567"
-            value={data.patientPhone || ''}
-            onChange={(e) => update({ patientPhone: e.target.value })}
-            className="w-full p-3.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm"
-          />
+          <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف / الواتساب في اليمن</label>
+          <div className="flex items-center border border-slate-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-teal-500">
+            <span className="bg-slate-100 text-slate-700 px-3 py-3.5 text-sm font-mono font-bold border-l border-slate-200">
+              +967
+            </span>
+            <input 
+              type="tel" 
+              placeholder="771234567"
+              value={data.patientPhone || ''}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                update({ patientPhone: val });
+              }}
+              className="w-full p-3.5 outline-none text-sm font-mono"
+            />
+          </div>
         </div>
       </div>
 
@@ -529,7 +538,7 @@ function Step3Schedule({ data, update, next, prev }: any) {
             <label className="block text-xs font-bold text-slate-700">الأوقات المتاحة لهذا اليوم:</label>
             {checkingSlots && (
               <span className="text-[11px] text-teal-600 flex items-center gap-1 font-medium">
-                <Loader2 className="w-3 h-3 animate-spin" /> التحقق من توفر الطبيب...
+                <Loader2 className="w-3 h-3 animate-spin" /> فحص توفر الطبيب...
               </span>
             )}
           </div>
@@ -605,7 +614,7 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
           <Camera className="text-teal-600 w-6 h-6" /> صور الحالة السريرية (اختياري)
         </h2>
         <p className="text-slate-500 text-sm mt-1">
-          يمكنك إرفاق صور واضحة للأسنان أو البشرة لمساعدة الطبيب في تقييم الإجراء المناسب قبل قدومك.
+          يمكنك إرفاق صور واضحة لمساعدة الطبيب في تقييم الإجراء المناسب قبل حضورك للعيادة.
         </p>
       </div>
 
@@ -646,16 +655,16 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
   );
 }
 
-// 5. مراجعة الحجز مع منع التعارض والازدواج
 function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: any) {
   const [conflictError, setConflictError] = useState('');
+
+  const fullPatientPhone = data.patientPhone.startsWith('+') ? data.patientPhone : `+967${data.patientPhone}`;
 
   const confirmReservation = async () => {
     setLoading(true);
     setConflictError('');
 
     try {
-      // فحص أخير للتأكد من عدم حجز الموعد أثناء تعبئة المريض للبيانات
       const { data: conflictCheck } = await supabase
         .from('Booking')
         .select('id')
@@ -669,7 +678,6 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
         return;
       }
 
-      // الإدخال في قاعدة البيانات
       const { error: insertError } = await supabase.from('Booking').insert([
         {
           branch_name: data.branchName,
@@ -679,7 +687,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           booking_date: data.date,
           booking_time: data.timeSlot,
           patient_name: data.patientName,
-          patient_phone: data.patientPhone,
+          patient_phone: fullPatientPhone,
           payment_method: data.paymentMethod,
           deposit_amount: data.depositAmount
         }
@@ -710,7 +718,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
       <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-3 text-sm">
         <div className="flex justify-between py-1 border-b border-slate-200/60">
           <span className="text-slate-500">اسم المراجع:</span>
-          <span className="font-bold text-slate-900">{data.patientName} ({data.patientPhone})</span>
+          <span className="font-bold text-slate-900">{data.patientName} ({fullPatientPhone})</span>
         </div>
         <div className="flex justify-between py-1 border-b border-slate-200/60">
           <span className="text-slate-500">الفرع المختار:</span>
@@ -754,7 +762,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           />
           <div>
             <span className="font-bold text-slate-900 block text-sm">الدفع نقداً أو عبر شبكة الدفع عند الحضور للعيادة</span>
-            <span className="text-xs text-slate-500">سيتم إرسال رسالة تأكيد لتثبيت الموعد مجاناً</span>
+            <span className="text-xs text-slate-500">سيتم إرسال رسالة تأكيد للواتساب لتثبيت الموعد</span>
           </div>
         </div>
 
@@ -797,25 +805,24 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
 function Step6SuccessDirectMaps({ data }: any) {
   const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${data.branchLat},${data.branchLng}&travelmode=driving`;
   
-  // رقم واتساب العيادة الموحد (يمكنك تغييره بالرقم المطلوب مع رمز الدولة 967)
-  const clinicWhatsAppNumber = '967771234567';
-  
+  // رقم واتساب الفرع المختار برمز الدولة الكامل 967
+  const branchWhatsApp = data.branchPhone || '967770000001';
   const bookingCode = `YE-${Math.floor(10000 + Math.random() * 90000)}`;
 
-  // نص الرسالة التلقائية الجاهزة للمريض
   const whatsappMessage = encodeURIComponent(
-    `مرحباً عيادات دنت آند سكن،\n` +
-    `لقد قمت بحجز موعد جديد عبر التطبيق:\n\n` +
+    `مرحباً إدارة عياداتنا الموقرة،\n` +
+    `لقد قمت بحجز موعد عبر التطبيق:\n\n` +
     `📌 رقم الحجز: ${bookingCode}\n` +
-    `👤 اسم المراجع: ${data.patientName}\n` +
+    `👤 المراجع: ${data.patientName}\n` +
+    `📱 الهاتف: +967${data.patientPhone}\n` +
     `🏥 الفرع: ${data.branchName} (${data.branchCity})\n` +
     `🩺 الخدمة: ${data.serviceName}\n` +
     `👨‍⚕️ الطبيب: ${data.doctorName}\n` +
-    `📅 الموعد: ${data.date} | ${data.timeSlot}\n\n` +
-    `أرجو تأكيد استلام الموعد، وشكراً لكم!`
+    `📅 التاريخ: ${data.date} | الوقت: ${data.timeSlot}\n\n` +
+    `يرجى تأكيد الحجز وإرسال التعليمات، وشكراً!`
   );
 
-  const whatsappUrl = `https://wa.me/${clinicWhatsAppNumber}?text=${whatsappMessage}`;
+  const whatsappUrl = `https://wa.me/${branchWhatsApp}?text=${whatsappMessage}`;
 
   return (
     <div className="text-center py-6 space-y-6">
@@ -854,7 +861,6 @@ function Step6SuccessDirectMaps({ data }: any) {
       </div>
 
       <div className="pt-2 space-y-3 max-w-sm mx-auto">
-        {/* زر الواتساب للمريض */}
         <a 
           href={whatsappUrl}
           target="_blank"
@@ -862,10 +868,9 @@ function Step6SuccessDirectMaps({ data }: any) {
           className="inline-flex items-center justify-center gap-2 w-full py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
         >
           <PhoneCall className="w-5 h-5" />
-          إرسال التفاصيل لواتساب العيادة لتأكيد فوري
+          إرسال التفاصيل لواتساب فرع العيادة
         </a>
 
-        {/* زر خرائط جوجل */}
         <a 
           href={gmapsUrl}
           target="_blank"
