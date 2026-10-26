@@ -4,9 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { 
   MapPin, Calendar, Camera, CreditCard, CheckCircle, 
-  Navigation, Clock, User, ChevronRight, ChevronLeft, 
+  Navigation, Clock, ChevronLeft, 
   Loader2, UploadCloud, Sparkles, ShieldCheck, PhoneCall,
-  Stethoscope, Smile, Award
+  Smile
 } from 'lucide-react';
 
 type BookingState = {
@@ -17,22 +17,21 @@ type BookingState = {
   branchLat: number;
   branchLng: number;
   category: 'dental' | 'derma';
-  serviceId: string;
-  serviceName: string;
-  depositAmount: number;
-  totalPrice: number;
-  doctorId: string;
-  doctorName: string;
-  doctorTitle: string;
-  date: string;
-  timeSlot: string;
+  serviceId?: string;
+  serviceName?: string;
+  depositAmount?: number;
+  totalPrice?: number;
+  doctorId?: string | number;
+  doctorName?: string;
+  doctorTitle?: string;
+  date?: string;
+  timeSlot?: string;
   mediaKeys: string[];
   patientName: string;
   patientPhone: string;
   paymentMethod: 'PAY_ONLINE' | 'PAY_AT_CLINIC';
 };
 
-// فروع العيادات داخل اليمن (صنعاء، عدن)
 const YEMEN_BRANCHES = [
   { 
     id: 'b-sanaa-1', 
@@ -72,21 +71,20 @@ const YEMEN_BRANCHES = [
   }
 ];
 
-// أقسام الأسنان والتجميل الموسعة
 const CLINIC_SERVICES = {
   dental: [
     { id: 'd1', name: 'ابتسامة هوليود وفينير E-max', durationMins: 60, depositAmount: 30, totalPrice: 150, desc: 'تصميم ابتسامة رقمي وعدسات خزفية مقاومة للتصبغ' },
     { id: 'd2', name: 'تبييض الأسنان بتقنية الفلاش / الليزر', durationMins: 45, depositAmount: 15, totalPrice: 60, desc: 'تبييض عميق وآمن يفتح حتى 8 درجات' },
-    { id: 'd3', name: 'زراعة الأسنان الفورية وتطعيم العظم', durationMins: 60, depositAmount: 50, totalPrice: 300, desc: 'زراعة سويسرية/ألمانية بأحدث أنظمة التوجيه ثلاثي الأبعاد' },
+    { id: 'd3', name: 'زراعة الأسنان الفورية وتطعيم العظم', durationMins: 60, depositAmount: 50, totalPrice: 300, desc: 'زراعة سويسرية بأحدث أنظمة التوجيه ثلاثي الأبعاد' },
     { id: 'd4', name: 'تقويم الأسنان الشفاف (Invisalign)', durationMins: 40, depositAmount: 25, totalPrice: 200, desc: 'تقويم خفي بدون أسلاك معدنية بمتابعة دورية' },
-    { id: 'd5', name: 'تنظيف الجير وتلميع الأسنان وعلاج اللثة', durationMins: 30, depositAmount: 10, totalPrice: 25, desc: 'إزالة كاملة للترسبات بالموجات الصوتية وحماية اللثة' }
+    { id: 'd5', name: 'تنظيف الجير وتلميع الأسنان وعلاج اللثة', durationMins: 30, depositAmount: 10, totalPrice: 25, desc: 'إزالة كاملة للترسبات وحماية اللثة' }
   ],
   derma: [
-    { id: 'c1', name: 'حقن الفيلر التجميلي (شفاه / تحديد الفك)', durationMins: 35, depositAmount: 20, totalPrice: 110, desc: 'مواد معتمدة بجودة سويسرية تعطي نتائج طبيعية وفورية' },
-    { id: 'c2', name: 'جلسة البوتوكس لإزالة التجاعيد وتصغير الابتسامة', durationMins: 25, depositAmount: 20, totalPrice: 90, desc: 'علاج تجاعيد الجبهة وحول العين وفرط التعرق' },
-    { id: 'c3', name: 'إبر النضارة والبروفايلو (Profhilo)', durationMins: 30, depositAmount: 25, totalPrice: 130, desc: 'تحفيز الكولاجين العميق وشد البشرة وإعادة الشباب' },
-    { id: 'c4', name: 'إزالة الشعر بالليزر (أحدث أجهزة كانديلا / دويتو)', durationMins: 45, depositAmount: 15, totalPrice: 50, desc: 'تبريد عالي ونتائج فعالة وآمنة لجميع أنواع البشرة' },
-    { id: 'c5', name: 'جلسات الهيدرافيشل لتنظيف وتقشير البشرة العميق', durationMins: 50, depositAmount: 10, totalPrice: 40, desc: 'تنظيف المسام وتغذية طبقات الجلد بالسيرومات الفعالة' }
+    { id: 'c1', name: 'حقن الفيلر التجميلي (شفاه / تحديد الفك)', durationMins: 35, depositAmount: 20, totalPrice: 110, desc: 'مواد معتمدة تعطي نتائج طبيعية وفورية' },
+    { id: 'c2', name: 'جلسة البوتوكس لإزالة التجاعيد', durationMins: 25, depositAmount: 20, totalPrice: 90, desc: 'علاج تجاعيد الجبهة وحول العين' },
+    { id: 'c3', name: 'إبر النضارة والبروفايلو (Profhilo)', durationMins: 30, depositAmount: 25, totalPrice: 130, desc: 'تحفيز الكولاجين العميق وشد البشرة' },
+    { id: 'c4', name: 'إزالة الشعر بأحدث أجهزة الليزر', durationMins: 45, depositAmount: 15, totalPrice: 50, desc: 'تبريد عالي ونتائج فعالة وآمنة' },
+    { id: 'c5', name: 'جلسات الهيدرافيشل لتنظيف البشرة العميق', durationMins: 50, depositAmount: 10, totalPrice: 40, desc: 'تنظيف المسام وتغذية طبقات الجلد' }
   ]
 };
 
@@ -104,7 +102,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 export default function BookingWizard() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [bookingData, setBookingData] = useState<Partial<BookingState>>({
+  const [bookingData, setBookingData] = useState<BookingState>({
     tenantId: '00000000-0000-0000-0000-000000000000',
     category: 'dental',
     branchId: YEMEN_BRANCHES[0].id,
@@ -154,7 +152,6 @@ export default function BookingWizard() {
   );
 }
 
-// 1. اختيار الفرع وعرض الخريطة
 function Step1BranchLocation({ data, update, next }: any) {
   const [branches, setBranches] = useState(YEMEN_BRANCHES);
   const [selectedBranch, setSelectedBranch] = useState(
@@ -175,7 +172,7 @@ function Step1BranchLocation({ data, update, next }: any) {
 
   const locateUserInYemen = () => {
     setLocating(true);
-    if (!navigator.geolocation) {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
       alert("خاصية تحديد الموقع غير مدعومة في متصفحك");
       setLocating(false);
       return;
@@ -187,14 +184,13 @@ function Step1BranchLocation({ data, update, next }: any) {
         const sorted = [...branches].map(b => ({
           ...b,
           distance: calculateDistance(latitude, longitude, b.lat, b.lng)
-        })).sort((a, b) => (a.distance || 0) - (b.distance || 0));
+        })).sort((a, b) => ((a as any).distance || 0) - ((b as any).distance || 0));
 
         setBranches(sorted);
         handleSelectBranch(sorted[0]);
         setLocating(false);
       },
-      (err) => {
-        console.error(err);
+      () => {
         setLocating(false);
         alert("يرجى تفعيل الـ GPS لتحديد أقرب فرع إليك تلقائياً");
       }
@@ -243,6 +239,7 @@ function Step1BranchLocation({ data, update, next }: any) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {branches.map(branch => {
           const isSelected = selectedBranch.id === branch.id;
+          const dist = (branch as any).distance;
           return (
             <div 
               key={branch.id}
@@ -266,9 +263,9 @@ function Step1BranchLocation({ data, update, next }: any) {
                     <PhoneCall className="w-3.5 h-3.5 text-slate-400" /> {branch.phone}
                   </p>
                 </div>
-                {branch.distance !== undefined && (
+                {dist !== undefined && (
                   <span className="text-[11px] font-bold bg-teal-100 text-teal-800 px-2 py-1 rounded-full whitespace-nowrap">
-                    يبعد {branch.distance.toFixed(1)} كم
+                    يبعد {dist.toFixed(1)} كم
                   </span>
                 )}
               </div>
@@ -287,39 +284,45 @@ function Step1BranchLocation({ data, update, next }: any) {
   );
 }
 
-// 2. الخدمات واختيار الأطباء ديناميكياً من Supabase
 function Step2ExpandedServices({ data, update, next, prev }: any) {
   const [activeTab, setActiveTab] = useState<'dental' | 'derma'>(data.category || 'dental');
   const [dbDoctors, setDbDoctors] = useState<any[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
 
-  // جلب الأطباء الحقيقيين من Supabase
   useEffect(() => {
-    const loadDoctorsFromSupabase = async () => {
+    let isMounted = true;
+    const loadDoctors = async () => {
       setLoadingDocs(true);
-      const { data: doctorsData, error } = await supabase
-        .from('Doctor')
-        .select('*');
+      try {
+        const { data: doctorsData, error } = await supabase
+          .from('Doctor')
+          .select('*');
 
-      if (!error && doctorsData && doctorsData.length > 0) {
-        setDbDoctors(doctorsData);
-      } else {
-        // قائمة احتياطية في حال تعذر الاتصال
-        setDbDoctors([
-          { id: 'doc1', name: 'د. سامي المقطري', specialty: 'استشاري جراحة وتجميل الفم والأسنان', category: 'dental' },
-          { id: 'doc2', name: 'د. مروة الشرجبي', specialty: 'أخصائية تقويم وتجميل الأسنان الرقمي', category: 'dental' },
-          { id: 'doc3', name: 'د. لمياء اليافعي', specialty: 'استشارية الأمراض الجلدية والليزر والحقن التجميلي', category: 'derma' },
-          { id: 'doc4', name: 'د. حسام العديني', specialty: 'أخصائي العلاج بالليزر والعناية بالبشرة والندبات', category: 'derma' }
-        ]);
+        if (isMounted) {
+          if (!error && doctorsData && doctorsData.length > 0) {
+            setDbDoctors(doctorsData);
+          } else {
+            setDbDoctors([
+              { id: '1', name: 'د. سامي المقطري', specialty: 'استشاري جراحة وتجميل الفم والأسنان', category: 'dental' },
+              { id: '2', name: 'د. مروة الشرجبي', specialty: 'أخصائية تقويم وتجميل الأسنان الرقمي', category: 'dental' },
+              { id: '3', name: 'د. لمياء اليافعي', specialty: 'استشارية الأمراض الجلدية والليزر والحقن التجميلي', category: 'derma' },
+              { id: '4', name: 'د. حسام العديني', specialty: 'أخصائي العلاج بالليزر والعناية بالبشرة والندبات', category: 'derma' }
+            ]);
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setDbDoctors([]);
+        }
       }
-      setLoadingDocs(false);
+      if (isMounted) setLoadingDocs(false);
     };
 
-    loadDoctorsFromSupabase();
+    loadDoctors();
+    return () => { isMounted = false; };
   }, []);
 
   const currentServices = CLINIC_SERVICES[activeTab];
-  // تصفية الأطباء بحسب القسم النشط (أسنان أو جلدية)
   const eligibleDoctors = dbDoctors.filter(d => d.category === activeTab);
 
   const handleCategorySwitch = (cat: 'dental' | 'derma') => {
@@ -418,7 +421,7 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
                     }`}
                   >
                     <div className="w-12 h-12 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg flex-shrink-0">
-                      {doc.name.charAt(3) || doc.name.charAt(0)}
+                      {doc.name ? doc.name.charAt(3) || doc.name.charAt(0) : 'ط'}
                     </div>
                     <div className="flex-grow">
                       <h4 className="font-bold text-slate-900 text-sm">{doc.name}</h4>
@@ -438,7 +441,6 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
   );
 }
 
-// 3. الموعد والبيانات
 function Step3Schedule({ data, update, next, prev }: any) {
   const times = [
     '09:30 صباحاً', '10:30 صباحاً', '11:30 صباحاً',
@@ -516,7 +518,6 @@ function Step3Schedule({ data, update, next, prev }: any) {
   );
 }
 
-// 4. صور الفحص الأولي السريري
 function Step4ConsultationMedia({ data, update, next, prev }: any) {
   const [uploading, setUploading] = useState(false);
 
@@ -592,7 +593,6 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
   );
 }
 
-// 5. مراجعة الحجز والحفظ في Supabase
 function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: any) {
   const confirmReservation = async () => {
     setLoading(true);
@@ -612,7 +612,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
         }
       ]);
     } catch (err) {
-      console.log('Saved locally for demo', err);
+      console.log('Saved demo', err);
     }
     setLoading(false);
     next();
@@ -662,7 +662,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           />
           <div>
             <span className="font-bold text-slate-900 block text-sm">الدفع نقداً أو عبر شبكة الدفع عند الحضور للعيادة</span>
-            <span className="text-xs text-slate-500">سيتم إرسال رسالة تأكيد لواتساب العيادة لتثبيت الموعد مجاناً</span>
+            <span className="text-xs text-slate-500">سيتم إرسال رسالة تأكيد لتثبيت الموعد مجاناً</span>
           </div>
         </div>
 
@@ -680,4 +680,93 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           />
           <div>
             <span className="font-bold text-slate-900 block text-sm">سداد العربون عبر الحوالات السريعة / المحافظ الإلكترونية (${data.depositAmount})</span>
-            <span className
+            <span className="text-xs text-slate-500">حجز أولوية فوري بدون انتظار في الاستقبال</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-3 pt-4 border-t border-slate-100">
+        <button onClick={prev} disabled={loading} className="px-5 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">
+          رجوع
+        </button>
+        <button 
+          onClick={confirmReservation} 
+          disabled={loading}
+          className="flex-1 py-4 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20"
+        >
+          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+          تأكيد الموعد النهائي
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Step6SuccessDirectMaps({ data }: any) {
+  const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${data.branchLat},${data.branchLng}&travelmode=driving`;
+
+  return (
+    <div className="text-center py-6 space-y-6">
+      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+        <CheckCircle className="w-9 h-9" />
+      </div>
+
+      <div>
+        <h2 className="text-2xl font-black text-slate-900">تم تسجيل موعدك بنجاح!</h2>
+        <p className="text-slate-500 text-sm mt-1">
+          أهلاً بك يا {data.patientName}، نحن بانتظار تشريفك في {data.branchName}
+        </p>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-right max-w-sm mx-auto space-y-2 text-xs sm:text-sm">
+        <div className="flex justify-between">
+          <span className="text-slate-400">رقم الحجز:</span>
+          <span className="font-mono font-bold text-teal-700">#YE-{Math.floor(10000 + Math.random() * 90000)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الفرع:</span>
+          <span className="font-bold text-slate-800">{data.branchName} ({data.branchCity})</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الخدمة:</span>
+          <span className="font-bold text-slate-800">{data.serviceName}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الموعد المحدد:</span>
+          <span className="font-bold text-slate-800">{data.date} الساعة {data.timeSlot}</span>
+        </div>
+      </div>
+
+      <div className="pt-2">
+        <a 
+          href={gmapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-2 w-full max-w-sm py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition shadow-xl"
+        >
+          <Navigation className="w-5 h-5 text-teal-400" />
+          التوجه الآن عبر Google Maps
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function WizardButtons({ prev, next, nextDisabled = false, nextText = "متابعة" }: any) {
+  return (
+    <div className="flex gap-3 pt-6 border-t border-slate-100">
+      {prev && (
+        <button onClick={prev} className="px-5 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
+          رجوع
+        </button>
+      )}
+      <button 
+        onClick={next} 
+        disabled={nextDisabled}
+        className="flex-1 py-3.5 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20"
+      >
+        {nextText} <ChevronLeft className="w-5 h-5" />
+      </button>
+    </div>
+  );
+}
