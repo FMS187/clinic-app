@@ -6,7 +6,7 @@ import {
   MapPin, Calendar, Camera, CreditCard, CheckCircle, 
   Navigation, Clock, ChevronLeft, 
   Loader2, UploadCloud, Sparkles, ShieldCheck, PhoneCall,
-  Smile
+  Smile, AlertTriangle
 } from 'lucide-react';
 
 type BookingState = {
@@ -311,9 +311,7 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
           }
         }
       } catch {
-        if (isMounted) {
-          setDbDoctors([]);
-        }
+        if (isMounted) setDbDoctors([]);
       }
       if (isMounted) setLoadingDocs(false);
     };
@@ -415,7 +413,7 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
                 return (
                   <div
                     key={doc.id}
-                    onClick={() => update({ doctorId: doc.id, doctorName: doc.name, doctorTitle: doc.specialty })}
+                    onClick={() => update({ doctorId: doc.id, doctorName: doc.name, doctorTitle: doc.specialty, timeSlot: undefined })}
                     className={`p-4 rounded-2xl border-2 cursor-pointer flex items-center gap-3 transition-all ${
                       isSelected ? 'border-teal-600 bg-teal-50 shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
@@ -441,11 +439,42 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
   );
 }
 
+// 3. الموعد مع فحص الأوقات المحجوزة مسبقاً وتعطيلها
 function Step3Schedule({ data, update, next, prev }: any) {
   const times = [
     '09:30 صباحاً', '10:30 صباحاً', '11:30 صباحاً',
     '04:30 عصراً', '05:30 مساءً', '06:30 مساءً', '07:30 مساءً'
   ];
+
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [checkingSlots, setCheckingSlots] = useState(false);
+
+  // جلب الأوقات التي تم حجزها بالفعل لهذا الطبيب في هذا اليوم المحدد
+  useEffect(() => {
+    const fetchBookedTimes = async () => {
+      if (!data.date || !data.doctorName) return;
+
+      setCheckingSlots(true);
+      const { data: existingBookings, error } = await supabase
+        .from('Booking')
+        .select('booking_time')
+        .eq('doctor_name', data.doctorName)
+        .eq('booking_date', data.date);
+
+      if (!error && existingBookings) {
+        const reserved = existingBookings.map(b => b.booking_time);
+        setBookedSlots(reserved);
+
+        // إذا كان الوقت المختار مسبقاً محجوزاً، نلغي اختياره
+        if (data.timeSlot && reserved.includes(data.timeSlot)) {
+          update({ timeSlot: undefined });
+        }
+      }
+      setCheckingSlots(false);
+    };
+
+    fetchBookedTimes();
+  }, [data.date, data.doctorName]);
 
   const isValid = data.date && data.timeSlot && data.patientName && data.patientPhone;
 
@@ -455,7 +484,9 @@ function Step3Schedule({ data, update, next, prev }: any) {
         <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
           <Calendar className="text-teal-600 w-6 h-6" /> موعد الزيارة وبياناتك
         </h2>
-        <p className="text-slate-500 text-sm mt-1">حدد اليوم والتوقيت المناسب وأدخل معلومات التواصل</p>
+        <p className="text-slate-500 text-sm mt-1">
+          حجز موعد مع: <strong className="text-teal-700">{data.doctorName}</strong>
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -486,7 +517,7 @@ function Step3Schedule({ data, update, next, prev }: any) {
         <input 
           type="date" 
           value={data.date || ''}
-          onChange={(e) => update({ date: e.target.value })}
+          onChange={(e) => update({ date: e.target.value, timeSlot: undefined })}
           min={new Date().toISOString().split('T')[0]}
           className="w-full p-3.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm"
         />
@@ -494,21 +525,43 @@ function Step3Schedule({ data, update, next, prev }: any) {
 
       {data.date && (
         <div className="space-y-2">
-          <label className="block text-xs font-bold text-slate-700">الفترات المتاحة لهذا اليوم:</label>
+          <div className="flex justify-between items-center">
+            <label className="block text-xs font-bold text-slate-700">الأوقات المتاحة لهذا اليوم:</label>
+            {checkingSlots && (
+              <span className="text-[11px] text-teal-600 flex items-center gap-1 font-medium">
+                <Loader2 className="w-3 h-3 animate-spin" /> التحقق من توفر الطبيب...
+              </span>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            {times.map(t => (
-              <button
-                key={t}
-                onClick={() => update({ timeSlot: t })}
-                className={`py-3 px-2 rounded-xl text-xs sm:text-sm font-semibold border transition ${
-                  data.timeSlot === t 
-                    ? 'bg-teal-600 text-white border-teal-600 shadow-md' 
-                    : 'bg-white text-slate-700 border-slate-200 hover:border-teal-400'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+            {times.map(t => {
+              const isBooked = bookedSlots.includes(t);
+              const isSelected = data.timeSlot === t;
+
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  disabled={isBooked}
+                  onClick={() => update({ timeSlot: t })}
+                  className={`py-3 px-2 rounded-xl text-xs sm:text-sm font-semibold border transition relative ${
+                    isBooked
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through opacity-70'
+                      : isSelected 
+                        ? 'bg-teal-600 text-white border-teal-600 shadow-md ring-2 ring-teal-600/30' 
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-teal-400'
+                  }`}
+                >
+                  {t}
+                  {isBooked && (
+                    <span className="block text-[10px] no-underline font-normal text-rose-500 mt-0.5">
+                      (محجوز)
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -593,11 +646,31 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
   );
 }
 
+// 5. مراجعة الحجز مع منع التعارض والازدواج
 function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: any) {
+  const [conflictError, setConflictError] = useState('');
+
   const confirmReservation = async () => {
     setLoading(true);
+    setConflictError('');
+
     try {
-      await supabase.from('Booking').insert([
+      // فحص أخير للتأكد من عدم حجز الموعد أثناء تعبئة المريض للبيانات
+      const { data: conflictCheck } = await supabase
+        .from('Booking')
+        .select('id')
+        .eq('doctor_name', data.doctorName)
+        .eq('booking_date', data.date)
+        .eq('booking_time', data.timeSlot);
+
+      if (conflictCheck && conflictCheck.length > 0) {
+        setConflictError('عذراً! تم حجز هذا التوقيت للتو من قبل مراجع آخر. يرجى الرجوع واختيار وقت آخر.');
+        setLoading(false);
+        return;
+      }
+
+      // الإدخال في قاعدة البيانات
+      const { error: insertError } = await supabase.from('Booking').insert([
         {
           branch_name: data.branchName,
           branch_city: data.branchCity,
@@ -611,11 +684,23 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           deposit_amount: data.depositAmount
         }
       ]);
-    } catch (err) {
-      console.log('Saved demo', err);
+
+      if (insertError) {
+        if (insertError.code === '23505') {
+          setConflictError('هذا الموعد محجوز مسبقاً لنفس الطبيب.');
+        } else {
+          setConflictError('تعذر تأكيد الحجز حالياً. يرجى المحاولة مرة أخرى.');
+        }
+        setLoading(false);
+        return;
+      }
+
+      setLoading(false);
+      next();
+    } catch {
+      setLoading(false);
+      next();
     }
-    setLoading(false);
-    next();
   };
 
   return (
@@ -644,6 +729,13 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           <span className="font-bold text-slate-900">{data.date} | الساعة {data.timeSlot}</span>
         </div>
       </div>
+
+      {conflictError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          <span>{conflictError}</span>
+        </div>
+      )}
 
       <div className="space-y-3">
         <label className="block text-xs font-bold text-slate-700">طريقة سداد العربون وتأكيد الحجز:</label>
@@ -730,6 +822,10 @@ function Step6SuccessDirectMaps({ data }: any) {
         <div className="flex justify-between">
           <span className="text-slate-400">الخدمة:</span>
           <span className="font-bold text-slate-800">{data.serviceName}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الطبيب:</span>
+          <span className="font-bold text-slate-800">{data.doctorName}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-400">الموعد المحدد:</span>
