@@ -796,6 +796,26 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
 
 function Step6SuccessDirectMaps({ data }: any) {
   const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${data.branchLat},${data.branchLng}&travelmode=driving`;
+  
+  // رقم واتساب العيادة الموحد (يمكنك تغييره بالرقم المطلوب مع رمز الدولة 967)
+  const clinicWhatsAppNumber = '967771234567';
+  
+  const bookingCode = `YE-${Math.floor(10000 + Math.random() * 90000)}`;
+
+  // نص الرسالة التلقائية الجاهزة للمريض
+  const whatsappMessage = encodeURIComponent(
+    `مرحباً عيادات دنت آند سكن،\n` +
+    `لقد قمت بحجز موعد جديد عبر التطبيق:\n\n` +
+    `📌 رقم الحجز: ${bookingCode}\n` +
+    `👤 اسم المراجع: ${data.patientName}\n` +
+    `🏥 الفرع: ${data.branchName} (${data.branchCity})\n` +
+    `🩺 الخدمة: ${data.serviceName}\n` +
+    `👨‍⚕️ الطبيب: ${data.doctorName}\n` +
+    `📅 الموعد: ${data.date} | ${data.timeSlot}\n\n` +
+    `أرجو تأكيد استلام الموعد، وشكراً لكم!`
+  );
+
+  const whatsappUrl = `https://wa.me/${clinicWhatsAppNumber}?text=${whatsappMessage}`;
 
   return (
     <div className="text-center py-6 space-y-6">
@@ -813,7 +833,7 @@ function Step6SuccessDirectMaps({ data }: any) {
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-right max-w-sm mx-auto space-y-2 text-xs sm:text-sm">
         <div className="flex justify-between">
           <span className="text-slate-400">رقم الحجز:</span>
-          <span className="font-mono font-bold text-teal-700">#YE-{Math.floor(10000 + Math.random() * 90000)}</span>
+          <span className="font-mono font-bold text-teal-700">#{bookingCode}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-400">الفرع:</span>
@@ -833,14 +853,26 @@ function Step6SuccessDirectMaps({ data }: any) {
         </div>
       </div>
 
-      <div className="pt-2">
+      <div className="pt-2 space-y-3 max-w-sm mx-auto">
+        {/* زر الواتساب للمريض */}
+        <a 
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-2 w-full py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
+        >
+          <PhoneCall className="w-5 h-5" />
+          إرسال التفاصيل لواتساب العيادة لتأكيد فوري
+        </a>
+
+        {/* زر خرائط جوجل */}
         <a 
           href={gmapsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 w-full max-w-sm py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition shadow-xl"
+          className="inline-flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition shadow-md text-sm"
         >
-          <Navigation className="w-5 h-5 text-teal-400" />
+          <Navigation className="w-4 h-4 text-teal-400" />
           التوجه الآن عبر Google Maps
         </a>
       </div>
