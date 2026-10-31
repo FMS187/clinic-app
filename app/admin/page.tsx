@@ -19,6 +19,7 @@ interface Doctor {
 
 export default function AdminDashboard() {
   const [user, setUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<'admin' | 'receptionist'>('admin');
   const [loadingAuth, setLoadingAuth] = useState(true);
 
   const [email, setEmail] = useState('');
@@ -34,7 +35,7 @@ export default function AdminDashboard() {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
 
-  // نافذة معاينة الصور السريرية
+  // نافذة معاينة الصور السريرية (خاصة بالمسؤول فقط)
   const [previewImages, setPreviewImages] = useState<string[] | null>(null);
 
   const [clinicPhone, setClinicPhone] = useState('');
@@ -49,21 +50,42 @@ export default function AdminDashboard() {
     branch: 'صنعاء - فرع حدة'
   });
 
+  const extractRole = (sessionUser: any): 'admin' | 'receptionist' => {
+    if (!sessionUser) return 'admin';
+    const metaRole = sessionUser.user_metadata?.role;
+    if (metaRole === 'receptionist') return 'receptionist';
+    return 'admin';
+  };
+
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      const role = extractRole(currentUser);
+      setUserRole(role);
+      if (role === 'receptionist') {
+        setActiveTab('bookings');
+      }
       setLoadingAuth(false);
     };
 
     checkSession();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchDoctors();
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      const role = extractRole(currentUser);
+      setUserRole(role);
+      if (role === 'receptionist') {
+        setActiveTab('bookings');
+      }
+      if (currentUser) {
         fetchBookings();
-        fetchClinicSettings();
+        if (role === 'admin') {
+          fetchDoctors();
+          fetchClinicSettings();
+        }
       }
     });
 
@@ -74,11 +96,13 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (user) {
-      fetchDoctors();
       fetchBookings();
-      fetchClinicSettings();
+      if (userRole === 'admin') {
+        fetchDoctors();
+        fetchClinicSettings();
+      }
     }
-  }, [user]);
+  }, [user, userRole]);
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,6 +144,8 @@ export default function AdminDashboard() {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (userRole !== 'admin') return;
+
     setSavingSettings(true);
     setSettingsSuccess(false);
 
@@ -183,6 +209,7 @@ export default function AdminDashboard() {
 
   const handleAddDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (userRole !== 'admin') return;
     if (!newDoctor.name || !newDoctor.specialty) return;
 
     const { data, error } = await supabase
@@ -205,6 +232,7 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteDoctor = async (id: string | number) => {
+    if (userRole !== 'admin') return;
     if (!confirm('هل أنت متأكد من رغبتك في حذف هذا الطبيب؟')) return;
     const { error } = await supabase.from('Doctor').delete().eq('id', id);
     if (!error) {
@@ -234,17 +262,17 @@ export default function AdminDashboard() {
           <div className="w-16 h-16 bg-teal-500/10 text-teal-400 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-teal-500/20">
             <Lock className="w-8 h-8" />
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">بوابة دخول إدارة العيادات</h1>
-          <p className="text-slate-400 text-xs sm:text-sm mb-6">سجل الدخول لإدارة الكادر الطبي ومتابعة الحجوزات</p>
+          <h1 className="text-xl font-bold text-white mb-2">بوابة دخول النظام الطبي</h1>
+          <p className="text-slate-400 text-xs sm:text-sm mb-6">تسجيل دخول موظفي الاستقبال والإدارة</p>
 
           <form onSubmit={handleEmailSignIn} className="space-y-4 text-right">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">البريد الإلكتروني للعيادة</label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">البريد الإلكتروني</label>
               <div className="relative">
                 <input
                   type="email"
                   required
-                  placeholder="admin@clinic.com"
+                  placeholder="reception@clinic.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full p-3.5 pr-10 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm outline-none focus:border-teal-500 transition"
@@ -287,6 +315,8 @@ export default function AdminDashboard() {
     );
   }
 
+  const isReceptionist = userRole === 'receptionist';
+
   return (
     <main className="min-h-screen bg-slate-100 text-slate-800 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -295,10 +325,17 @@ export default function AdminDashboard() {
           <div>
             <div className="flex items-center gap-2">
               <Shield className="w-6 h-6 text-teal-600" />
-              <h1 className="text-2xl font-bold text-slate-900">لوحة تحكم العيادات</h1>
+              <h1 className="text-2xl font-bold text-slate-900">
+                {isReceptionist ? 'بوابة موظف الاستقبال والمواعيد' : 'لوحة تحكم الإدارة العامة'}
+              </h1>
             </div>
-            <p className="text-slate-500 text-xs mt-1">
-              المسؤول الحالي: <span className="font-semibold text-slate-700">{user.email}</span>
+            <p className="text-slate-500 text-xs mt-1 flex items-center gap-1.5">
+              <span>المستخدم: <strong className="text-slate-700">{user.email}</strong></span>
+              <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                isReceptionist ? 'bg-amber-100 text-amber-800' : 'bg-teal-100 text-teal-800'
+              }`}>
+                {isReceptionist ? 'موظف استقبال' : 'مدير النظام (Admin)'}
+              </span>
             </p>
           </div>
 
@@ -310,24 +347,30 @@ export default function AdminDashboard() {
                   activeTab === 'bookings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                 }`}
               >
-                المواعيد ({bookings.length})
+                جدول المواعيد ({bookings.length})
               </button>
-              <button
-                onClick={() => { setActiveTab('doctors'); fetchDoctors(); }}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition ${
-                  activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
-                }`}
-              >
-                الأطباء ({doctors.length})
-              </button>
-              <button
-                onClick={() => { setActiveTab('settings'); fetchClinicSettings(); }}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1 ${
-                  activeTab === 'settings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
-                }`}
-              >
-                <Settings className="w-3.5 h-3.5" /> إعدادات العيادة
-              </button>
+
+              {/* إخفاء تبويبي الأطباء والإعدادات عن موظف الاستقبال */}
+              {!isReceptionist && (
+                <>
+                  <button
+                    onClick={() => { setActiveTab('doctors'); fetchDoctors(); }}
+                    className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition ${
+                      activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
+                    }`}
+                  >
+                    الأطباء ({doctors.length})
+                  </button>
+                  <button
+                    onClick={() => { setActiveTab('settings'); fetchClinicSettings(); }}
+                    className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1 ${
+                      activeTab === 'settings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
+                    }`}
+                  >
+                    <Settings className="w-3.5 h-3.5" /> إعدادات العيادة
+                  </button>
+                </>
+              )}
             </div>
 
             <button
@@ -340,12 +383,12 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* 1. جدول المواعيد والحالات المرفقة */}
+        {/* 1. جدول المواعيد والحالات */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد والحالات المرفقة
+                <Calendar className="w-5 h-5 text-teal-600" /> إدارة المواعيد وتأكيد الحضور
               </h2>
               <button 
                 onClick={fetchBookings}
@@ -372,7 +415,8 @@ export default function AdminDashboard() {
                       <th className="p-3">الخدمة</th>
                       <th className="p-3">الطبيب والفرع</th>
                       <th className="p-3">الموعد</th>
-                      <th className="p-3">الصور السريرية</th>
+                      {/* إخفاء رأس عمود الصور عن موظف الاستقبال */}
+                      {!isReceptionist && <th className="p-3">الصور السريرية</th>}
                       <th className="p-3">حالة الحجز</th>
                       <th className="p-3">تواصل</th>
                     </tr>
@@ -414,19 +458,24 @@ export default function AdminDashboard() {
                           <td className="p-3 text-slate-800 font-mono font-medium whitespace-nowrap">
                             {b.booking_date} <br/><span className="text-xs text-slate-500">{b.booking_time}</span>
                           </td>
-                          <td className="p-3">
-                            {hasPhotos ? (
-                              <button
-                                onClick={() => setPreviewImages(b.media_keys.map((k: string) => getFullImageUrl(k)))}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 hover:bg-teal-600 hover:text-white rounded-lg border border-teal-200 text-xs font-bold transition shadow-sm"
-                              >
-                                <ImageIcon className="w-3.5 h-3.5" />
-                                عرض ({b.media_keys.length})
-                              </button>
-                            ) : (
-                              <span className="text-slate-400 text-xs">لا توجد صور</span>
-                            )}
-                          </td>
+
+                          {/* عرض زر الصور السريرية للمسؤول (Admin) فقط وحجبه عن موظف الاستقبال */}
+                          {!isReceptionist && (
+                            <td className="p-3">
+                              {hasPhotos ? (
+                                <button
+                                  onClick={() => setPreviewImages(b.media_keys.map((k: string) => getFullImageUrl(k)))}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 hover:bg-teal-600 hover:text-white rounded-lg border border-teal-200 text-xs font-bold transition shadow-sm"
+                                >
+                                  <ImageIcon className="w-3.5 h-3.5" />
+                                  عرض ({b.media_keys.length})
+                                </button>
+                              ) : (
+                                <span className="text-slate-400 text-xs">لا توجد صور</span>
+                              )}
+                            </td>
+                          )}
+
                           <td className="p-3">
                             {updatingStatusId === b.id ? (
                               <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
@@ -434,7 +483,7 @@ export default function AdminDashboard() {
                               <select
                                 value={currentStatus}
                                 onChange={(e) => handleUpdateStatus(b.id, e.target.value)}
-                                className={`text-xs font-bold px-2 py-1.5 rounded-lg border outline-none cursor-pointer ${
+                                className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer ${
                                   currentStatus === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                                   currentStatus === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-300' :
                                   currentStatus === 'cancelled' ? 'bg-rose-50 text-rose-700 border-rose-300' :
@@ -469,8 +518,8 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 2. تبويب الأطباء */}
-        {activeTab === 'doctors' && (
+        {/* 2. تبويب الأطباء (للمسؤول فقط) */}
+        {!isReceptionist && activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -584,8 +633,8 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 3. تبويب الإعدادات */}
-        {activeTab === 'settings' && (
+        {/* 3. تبويب الإعدادات (للمسؤول فقط) */}
+        {!isReceptionist && activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
             <div className="border-b border-slate-100 pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -644,8 +693,8 @@ export default function AdminDashboard() {
 
       </div>
 
-      {/* نافذة معاينة الصور السريرية المنبثقة */}
-      {previewImages && (
+      {/* نافذة معاينة الصور السريرية المنبثقة (تظهر للمسؤول فقط) */}
+      {!isReceptionist && previewImages && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
