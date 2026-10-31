@@ -651,6 +651,29 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
 
 function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: any) {
   const [conflictError, setConflictError] = useState('');
+  const [paymentAccounts, setPaymentAccounts] = useState(
+    '• بنك الكريمي: 1234567 (باسم عيادات دنت آند سكن)\n• محفظة فلوسك: 771234567\n• محفظة جايبي / ون كاش: 731234567\n• شبكة النجم / الامتياز: باسم المركز الرئيسي'
+  );
+
+  // جلب حسابات الدفع المحفوظة في لوحة الإدارة
+  useEffect(() => {
+    const fetchPaymentDetails = async () => {
+      try {
+        const { data: settings } = await supabase
+          .from('ClinicSettings')
+          .select('payment_info')
+          .eq('id', 1)
+          .single();
+
+        if (settings?.payment_info && settings.payment_info.trim() !== '') {
+          setPaymentAccounts(settings.payment_info);
+        }
+      } catch (e) {
+        console.log('Error loading payment info', e);
+      }
+    };
+    fetchPaymentDetails();
+  }, []);
 
   const confirmReservation = async () => {
     setLoading(true);
@@ -662,7 +685,8 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
         .select('id')
         .eq('doctor_name', data.doctorName)
         .eq('booking_date', data.date)
-        .eq('booking_time', data.timeSlot);
+        .eq('booking_time', data.timeSlot)
+        .neq('status', 'cancelled');
 
       if (conflictCheck && conflictCheck.length > 0) {
         setConflictError('عذراً! تم حجز هذا التوقيت للتو من قبل مراجع آخر. يرجى الرجوع واختيار وقت آخر.');
@@ -681,16 +705,13 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           patient_name: data.patientName,
           patient_phone: data.patientPhone,
           payment_method: data.paymentMethod,
-          deposit_amount: data.depositAmount
+          deposit_amount: data.depositAmount,
+          status: 'pending'
         }
       ]);
 
       if (insertError) {
-        if (insertError.code === '23505') {
-          setConflictError('هذا الموعد محجوز مسبقاً لنفس الطبيب.');
-        } else {
-          setConflictError('تعذر تأكيد الحجز حالياً. يرجى المحاولة مرة أخرى.');
-        }
+        setConflictError('تعذر تأكيد الحجز حالياً. يرجى المحاولة مرة أخرى.');
         setLoading(false);
         return;
       }
@@ -740,10 +761,11 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
       <div className="space-y-3">
         <label className="block text-xs font-bold text-slate-700">طريقة سداد العربون وتأكيد الحجز:</label>
         
+        {/* الخيار الأول: نقداً بالعيادة */}
         <div 
           onClick={() => update({ paymentMethod: 'PAY_AT_CLINIC' })}
-          className={`p-4 rounded-xl border-2 cursor-pointer flex gap-3 ${
-            data.paymentMethod === 'PAY_AT_CLINIC' ? 'border-teal-600 bg-teal-50' : 'border-slate-200'
+          className={`p-4 rounded-xl border-2 cursor-pointer flex gap-3 transition ${
+            data.paymentMethod === 'PAY_AT_CLINIC' ? 'border-teal-600 bg-teal-50/70 shadow-sm' : 'border-slate-200 bg-white'
           }`}
         >
           <input 
@@ -758,22 +780,43 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           </div>
         </div>
 
+        {/* الخيار الثاني: محافظ وحوالات إلكترونية */}
         <div 
           onClick={() => update({ paymentMethod: 'PAY_ONLINE' })}
-          className={`p-4 rounded-xl border-2 cursor-pointer flex gap-3 ${
-            data.paymentMethod === 'PAY_ONLINE' ? 'border-teal-600 bg-teal-50' : 'border-slate-200'
+          className={`p-4 rounded-xl border-2 cursor-pointer flex flex-col gap-3 transition ${
+            data.paymentMethod === 'PAY_ONLINE' ? 'border-teal-600 bg-teal-50/70 shadow-sm' : 'border-slate-200 bg-white'
           }`}
         >
-          <input 
-            type="radio" 
-            checked={data.paymentMethod === 'PAY_ONLINE'} 
-            readOnly 
-            className="mt-1" 
-          />
-          <div>
-            <span className="font-bold text-slate-900 block text-sm">سداد العربون عبر الحوالات السريعة / المحافظ الإلكترونية (${data.depositAmount})</span>
-            <span className="text-xs text-slate-500">حجز أولوية فوري بدون انتظار في الاستقبال</span>
+          <div className="flex gap-3 items-start">
+            <input 
+              type="radio" 
+              checked={data.paymentMethod === 'PAY_ONLINE'} 
+              readOnly 
+              className="mt-1" 
+            />
+            <div>
+              <span className="font-bold text-slate-900 block text-sm">
+                سداد العربون عبر الحوالات السريعة / المحافظ الإلكترونية (${data.depositAmount || 20})
+              </span>
+              <span className="text-xs text-slate-500">حجز أولوية وتثبيت مباشر فوري بدون انتظار</span>
+            </div>
           </div>
+
+          {/* صندوق الحسابات البنكية والمحافظ */}
+          {data.paymentMethod === 'PAY_ONLINE' && (
+            <div className="mt-2 p-4 bg-white border border-teal-300 rounded-xl space-y-2.5 shadow-sm text-right">
+              <div className="font-bold text-teal-800 text-xs sm:text-sm flex items-center gap-2 border-b border-teal-100 pb-2">
+                <Wallet className="w-4 h-4 text-teal-600" />
+                حسابات التحويل المعتمدة لسداد العربون (${data.depositAmount || 20}):
+              </div>
+              <div className="whitespace-pre-line text-slate-800 leading-relaxed font-sans text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 select-all font-medium">
+                {paymentAccounts}
+              </div>
+              <p className="text-[11px] text-teal-700 font-semibold flex items-center gap-1">
+                <span>💡</span> بعد التحويل، ستتمكن من إرفاق صورة السند مباشرة عبر واتساب العيادة.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -793,6 +836,9 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
     </div>
   );
 }
+
+
+  
 
 // 6. شاشة النجاح: جلب رقم العيادة المسجل في الإدارة وتوجيه الواتساب إليه
 function Step6SuccessDirectMaps({ data }: any) {
