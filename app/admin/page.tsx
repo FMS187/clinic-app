@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   Plus, Trash2, Calendar, Phone, 
   MapPin, Shield, Lock, Stethoscope, 
-  Clock, AlertCircle, Loader2, LogOut, Mail, Settings, CheckCircle2
+  Clock, AlertCircle, Loader2, LogOut, Mail, Settings, CheckCircle2, CreditCard
 } from 'lucide-react';
 
 interface Doctor {
@@ -34,8 +34,9 @@ export default function AdminDashboard() {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
 
-  // إعدادات العيادة
+  // إعدادات العيادة والحسابات المالية
   const [clinicPhone, setClinicPhone] = useState('');
+  const [paymentInfo, setPaymentInfo] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
@@ -106,12 +107,13 @@ export default function AdminDashboard() {
   const fetchClinicSettings = async () => {
     const { data } = await supabase
       .from('ClinicSettings')
-      .select('clinic_phone')
+      .select('clinic_phone, payment_info')
       .eq('id', 1)
       .single();
 
-    if (data?.clinic_phone) {
-      setClinicPhone(data.clinic_phone);
+    if (data) {
+      if (data.clinic_phone) setClinicPhone(data.clinic_phone);
+      if (data.payment_info) setPaymentInfo(data.payment_info);
     }
   };
 
@@ -124,13 +126,17 @@ export default function AdminDashboard() {
 
     const { error } = await supabase
       .from('ClinicSettings')
-      .upsert({ id: 1, clinic_phone: cleaned });
+      .upsert({ 
+        id: 1, 
+        clinic_phone: cleaned,
+        payment_info: paymentInfo
+      });
 
     if (!error) {
       setSettingsSuccess(true);
       setTimeout(() => setSettingsSuccess(false), 3000);
     } else {
-      alert('حدث خطأ أثناء حفظ الرقم');
+      alert('حدث خطأ أثناء حفظ الإعدادات');
     }
     setSavingSettings(false);
   };
@@ -157,7 +163,6 @@ export default function AdminDashboard() {
     setLoadingBookings(false);
   };
 
-  // تحديث حالة الحجز في قاعدة البيانات
   const handleUpdateStatus = async (bookingId: string | number, newStatus: string) => {
     setUpdatingStatusId(bookingId);
     const { error } = await supabase
@@ -325,7 +330,7 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* 1. تبويب جدول المواعيد مع التحكم في الحالة */}
+        {/* جدول المواعيد */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -355,7 +360,7 @@ export default function AdminDashboard() {
                       <th className="p-3">المريض</th>
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الخدمة</th>
-                      <th className="p-3">الطبيب والفرع</th>
+                      <th className="p-3">طريقة الدفع</th>
                       <th className="p-3">الموعد</th>
                       <th className="p-3">حالة الحجز</th>
                       <th className="p-3">تواصل</th>
@@ -378,7 +383,7 @@ export default function AdminDashboard() {
                         `🩺 الخدمة: ${b.service_name}\n` +
                         `👨‍⚕️ الطبيب: ${b.doctor_name}\n` +
                         `📅 الموعد: ${b.booking_date} الساعة ${b.booking_time}\n` +
-                        `حالة الموعد الحالية: ${
+                        `حالة الموعد: ${
                           currentStatus === 'confirmed' ? 'مؤكد ✅' :
                           currentStatus === 'completed' ? 'تم الكشف بنجاح 🩺' :
                           currentStatus === 'cancelled' ? 'ملغي ❌' : 'قيد المراجعة ⏳'
@@ -395,9 +400,12 @@ export default function AdminDashboard() {
                             {b.patient_phone || '-'}
                           </td>
                           <td className="p-3 text-teal-700 font-medium">{b.service_name || '-'}</td>
-                          <td className="p-3 text-slate-800">
-                            <div>{b.doctor_name || '-'}</div>
-                            <span className="text-[10px] text-slate-400 block">{b.branch_name}</span>
+                          <td className="p-3 text-slate-600 text-xs">
+                            {b.payment_method === 'PAY_ONLINE' ? (
+                              <span className="bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded">محفظة / حوالة (${b.deposit_amount})</span>
+                            ) : (
+                              <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded">نقداً بالعيادة</span>
+                            )}
                           </td>
                           <td className="p-3 text-slate-800 font-mono font-medium whitespace-nowrap">
                             {b.booking_date} <br/><span className="text-xs text-slate-500">{b.booking_time}</span>
@@ -444,7 +452,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 2. تبويب الأطباء والتخصصات */}
+        {/* إدارة الأطباء */}
         {activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -559,14 +567,14 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 3. تبويب إعدادات العيادة */}
+        {/* إعدادات العيادة والمحافظ المالية */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
             <div className="border-b border-slate-100 pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-teal-600" /> إعدادات وتواصل العيادة
+                <Settings className="w-5 h-5 text-teal-600" /> إعدادات العيادة والحسابات المالية
               </h2>
-              <p className="text-slate-500 text-xs mt-1">تحديد رقم الواتساب الرسمي الذي ستصل إليه رسائل الحجز من جميع المرضى</p>
+              <p className="text-slate-500 text-xs mt-1">تحديد رقم الواتساب الرسمي وحسابات المحافظ الإلكترونية لتحصيل العربون</p>
             </div>
 
             <form onSubmit={handleSaveSettings} className="space-y-4">
@@ -588,9 +596,22 @@ export default function AdminDashboard() {
                 <p className="text-[11px] text-slate-400 mt-1">أدخل الرقم بدون الصفر الأول (مثال: 771234567)</p>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-teal-600" /> بيانات المحافظ والحسابات البنكية (تظهر للمريض عند الدفع الإلكتروني)
+                </label>
+                <textarea
+                  rows={4}
+                  placeholder="مثال:&#10;• بنك الكريمي: 1234567 (باسم عيادات دنت آند سكن)&#10;• محفظة فلوسك: 771234567&#10;• محفظة جايبي / ون كاش: 731234567&#10;• شبكة النجم / الامتياز: باسم المركز الرئيسي"
+                  value={paymentInfo}
+                  onChange={(e) => setPaymentInfo(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none leading-relaxed"
+                />
+              </div>
+
               {settingsSuccess && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-xs font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" /> تم تحديث رقم العيادة بنجاح!
+                  <CheckCircle2 className="w-4 h-4" /> تم حفظ الإعدادات والحسابات بنجاح!
                 </div>
               )}
 
@@ -599,7 +620,7 @@ export default function AdminDashboard() {
                 disabled={savingSettings}
                 className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm transition flex items-center justify-center gap-2 shadow-md shadow-teal-600/20"
               >
-                {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ الرقم المعتمد للعيادة'}
+                {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ الإعدادات والحسابات'}
               </button>
             </form>
           </div>
