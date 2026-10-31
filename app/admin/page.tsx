@@ -28,17 +28,15 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<'doctors' | 'bookings' | 'settings'>('bookings');
 
-  // بيانات الأطباء والحجوزات
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
 
-  // معاينة الصور المنبثقة
+  // نافذة معاينة الصور
   const [previewImages, setPreviewImages] = useState<string[] | null>(null);
 
-  // إعدادات العيادة
   const [clinicPhone, setClinicPhone] = useState('');
   const [paymentInfo, setPaymentInfo] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
@@ -212,8 +210,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // استخراج الروابط الكاملة للصور
-  const getImageUrl = (path: string) => {
+  const getFullImageUrl = (path: string) => {
     if (!path) return '';
     if (path.startsWith('http')) return path;
     const { data } = supabase.storage.from('consultations').getPublicUrl(path);
@@ -341,12 +338,12 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* 1. جدول المواعيد والحالات والصور */}
+        {/* جدول المواعيد والحالات المرفقة */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد والحالات المرفقة
+                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد وإدارة الحالات
               </h2>
               <button 
                 onClick={fetchBookings}
@@ -371,9 +368,9 @@ export default function AdminDashboard() {
                       <th className="p-3">المريض</th>
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الخدمة</th>
-                      <th className="p-3">الطبيب</th>
+                      <th className="p-3">الطبيب والفرع</th>
                       <th className="p-3">الموعد</th>
-                      <th className="p-3">صور الحالة</th>
+                      <th className="p-3">الصور السريرية</th>
                       <th className="p-3">حالة الحجز</th>
                       <th className="p-3">تواصل</th>
                     </tr>
@@ -396,11 +393,7 @@ export default function AdminDashboard() {
                         `🩺 الخدمة: ${b.service_name}\n` +
                         `👨‍⚕️ الطبيب: ${b.doctor_name}\n` +
                         `📅 الموعد: ${b.booking_date} الساعة ${b.booking_time}\n` +
-                        `حالة الموعد: ${
-                          currentStatus === 'confirmed' ? 'مؤكد ✅' :
-                          currentStatus === 'completed' ? 'تم الكشف بنجاح 🩺' :
-                          currentStatus === 'cancelled' ? 'ملغي ❌' : 'قيد المراجعة ⏳'
-                        }\n\nنتمنى لك دوام الصحة والعافية!`
+                        `نتمنى لك دوام الصحة والعافية!`
                       );
 
                       const patientWaLink = `https://wa.me/${cleanPhone}?text=${adminReplyMessage}`;
@@ -423,14 +416,14 @@ export default function AdminDashboard() {
                           <td className="p-3">
                             {hasPhotos ? (
                               <button
-                                onClick={() => setPreviewImages(b.media_keys.map((k: string) => getImageUrl(k)))}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-50 text-teal-700 hover:bg-teal-100 rounded-lg border border-teal-200 text-xs font-bold transition shadow-sm"
+                                onClick={() => setPreviewImages(b.media_keys.map((k: string) => getFullImageUrl(k)))}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 hover:bg-teal-600 hover:text-white rounded-lg border border-teal-200 text-xs font-bold transition shadow-sm"
                               >
-                                <ImageIcon className="w-3.5 h-3.5 text-teal-600" />
-                                {b.media_keys.length} صور
+                                <ImageIcon className="w-3.5 h-3.5" />
+                                عرض ({b.media_keys.length})
                               </button>
                             ) : (
-                              <span className="text-slate-400 text-xs">لا يوجد</span>
+                              <span className="text-slate-400 text-xs">لا توجد صور</span>
                             )}
                           </td>
                           <td className="p-3">
@@ -440,7 +433,7 @@ export default function AdminDashboard() {
                               <select
                                 value={currentStatus}
                                 onChange={(e) => handleUpdateStatus(b.id, e.target.value)}
-                                className={`text-xs font-bold px-2 py-1.5 rounded-lg border outline-none cursor-pointer ${
+                                className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer ${
                                   currentStatus === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                                   currentStatus === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-300' :
                                   currentStatus === 'cancelled' ? 'bg-rose-50 text-rose-700 border-rose-300' :
@@ -475,7 +468,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 2. تبويب الأطباء */}
+        {/* باقي التبويبات (الأطباء والإعدادات) */}
         {activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -590,7 +583,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 3. تبويب الإعدادات */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
             <div className="border-b border-slate-100 pb-3">
@@ -650,7 +642,7 @@ export default function AdminDashboard() {
 
       </div>
 
-      {/* نافذة معاينة الصور المنبثقة */}
+      {/* نافذة معاينة الصور السريرية المنبثقة */}
       {previewImages && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
