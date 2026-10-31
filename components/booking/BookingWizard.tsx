@@ -389,4 +389,582 @@ function Step2ExpandedServices({ data, update, next, prev }: any) {
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{srv.desc}</p>
-                <div className="
+                <div className="flex gap-4 mt-3 text-xs text-slate-500 border-t border-slate-100 pt-2">
+                  <span className="flex items-center gap-1 font-medium"><Clock className="w-3.5 h-3.5 text-teal-600"/> {srv.durationMins} دقيقة</span>
+                  <span className="flex items-center gap-1 font-medium"><CreditCard className="w-3.5 h-3.5 text-teal-600"/> عربون تأكيد: ${srv.depositAmount}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {data.serviceId && (
+        <div className="pt-4 border-t border-slate-200 space-y-3">
+          <h3 className="font-semibold text-slate-700 text-sm">اختر الطبيب المعالج:</h3>
+          {loadingDocs ? (
+            <div className="text-center py-6"><Loader2 className="w-6 h-6 animate-spin text-teal-600 mx-auto" /></div>
+          ) : eligibleDoctors.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3">لا يوجد أطباء مضافون لهذا القسم حالياً.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {eligibleDoctors.map(doc => {
+                const isSelected = String(data.doctorId) === String(doc.id);
+                return (
+                  <div
+                    key={doc.id}
+                    onClick={() => update({ doctorId: doc.id, doctorName: doc.name, doctorTitle: doc.specialty, timeSlot: undefined })}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer flex items-center gap-3 transition-all ${
+                      isSelected ? 'border-teal-600 bg-teal-50 shadow-md' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="w-12 h-12 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                      {doc.name ? doc.name.charAt(3) || doc.name.charAt(0) : 'ط'}
+                    </div>
+                    <div className="flex-grow">
+                      <h4 className="font-bold text-slate-900 text-sm">{doc.name}</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">{doc.specialty}</p>
+                      {doc.branch && <span className="text-[10px] text-teal-600 font-medium block mt-1">{doc.branch}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <WizardButtons prev={prev} next={next} nextDisabled={!isComplete} />
+    </div>
+  );
+}
+
+function Step3Schedule({ data, update, next, prev }: any) {
+  const times = [
+    '09:30 صباحاً', '10:30 صباحاً', '11:30 صباحاً',
+    '04:30 عصراً', '05:30 مساءً', '06:30 مساءً', '07:30 مساءً'
+  ];
+
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [checkingSlots, setCheckingSlots] = useState(false);
+
+  useEffect(() => {
+    const fetchBookedTimes = async () => {
+      if (!data.date || !data.doctorName) return;
+
+      setCheckingSlots(true);
+      const { data: existingBookings, error } = await supabase
+        .from('Booking')
+        .select('booking_time')
+        .eq('doctor_name', data.doctorName)
+        .eq('booking_date', data.date)
+        .neq('status', 'cancelled');
+
+      if (!error && existingBookings) {
+        const reserved = existingBookings.map(b => b.booking_time);
+        setBookedSlots(reserved);
+
+        if (data.timeSlot && reserved.includes(data.timeSlot)) {
+          update({ timeSlot: undefined });
+        }
+      }
+      setCheckingSlots(false);
+    };
+
+    fetchBookedTimes();
+  }, [data.date, data.doctorName]);
+
+  const isValid = data.date && data.timeSlot && data.patientName && data.patientPhone;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          <Calendar className="text-teal-600 w-6 h-6" /> موعد الزيارة وبياناتك
+        </h2>
+        <p className="text-slate-500 text-sm mt-1">
+          حجز موعد مع: <strong className="text-teal-700">{data.doctorName}</strong>
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1">اسم المريض ثلاثي</label>
+          <input 
+            type="text" 
+            placeholder="مثال: أحمد عبد الله اليماني"
+            value={data.patientName || ''}
+            onChange={(e) => update({ patientName: e.target.value })}
+            className="w-full p-3.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف أو الواتساب (للتأكيد)</label>
+          <div className="relative flex items-center">
+            <div className="bg-slate-100 border border-l-0 border-slate-300 rounded-r-xl px-3 py-3.5 text-xs text-slate-600 font-bold flex items-center gap-1" dir="ltr">
+              <span>🇾🇪 +967</span>
+            </div>
+            <input 
+              type="tel" 
+              placeholder="77xxxxxxx أو 73xxxxxxx"
+              value={data.patientPhone || ''}
+              onChange={(e) => update({ patientPhone: e.target.value })}
+              className="w-full p-3.5 border border-slate-300 rounded-l-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm font-mono"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الحجز</label>
+        <input 
+          type="date" 
+          value={data.date || ''}
+          onChange={(e) => update({ date: e.target.value, timeSlot: undefined })}
+          min={new Date().toISOString().split('T')[0]}
+          className="w-full p-3.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm"
+        />
+      </div>
+
+      {data.date && (
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <label className="block text-xs font-bold text-slate-700">الأوقات المتاحة لهذا اليوم:</label>
+            {checkingSlots && (
+              <span className="text-[11px] text-teal-600 flex items-center gap-1 font-medium">
+                <Loader2 className="w-3 h-3 animate-spin" /> التحقق من توفر الطبيب...
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {times.map(t => {
+              const isBooked = bookedSlots.includes(t);
+              const isSelected = data.timeSlot === t;
+
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  disabled={isBooked}
+                  onClick={() => update({ timeSlot: t })}
+                  className={`py-3 px-2 rounded-xl text-xs sm:text-sm font-semibold border transition relative ${
+                    isBooked
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through opacity-70'
+                      : isSelected 
+                        ? 'bg-teal-600 text-white border-teal-600 shadow-md ring-2 ring-teal-600/30' 
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-teal-400'
+                  }`}
+                >
+                  {t}
+                  {isBooked && (
+                    <span className="block text-[10px] no-underline font-normal text-rose-500 mt-0.5">
+                      (محجوز)
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <WizardButtons prev={prev} next={next} nextDisabled={!isValid} />
+    </div>
+  );
+}
+
+function Step4ConsultationMedia({ data, update, next, prev }: any) {
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    const newKeys = [...(data.mediaKeys || [])];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileName = `${Date.now()}-${file.name}`;
+      const filePath = `consultations/${fileName}`;
+
+      const { error } = await supabase.storage.from('consultations').upload(filePath, file);
+      if (error) {
+        newKeys.push(`fallback_${file.name}`);
+      } else {
+        newKeys.push(filePath);
+      }
+    }
+
+    update({ mediaKeys: newKeys });
+    setUploading(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          <Camera className="text-teal-600 w-6 h-6" /> صور الحالة السريرية (اختياري)
+        </h2>
+        <p className="text-slate-500 text-sm mt-1">
+          يمكنك إرفاق صور واضحة للأسنان أو البشرة لمساعدة الطبيب في تقييم الإجراء المناسب قبل قدومك.
+        </p>
+      </div>
+
+      <div className="border-2 border-dashed border-teal-300 bg-teal-50/30 rounded-2xl p-8 text-center relative hover:bg-teal-50 transition">
+        <input 
+          type="file" 
+          accept="image/*" 
+          multiple 
+          onChange={handleUpload}
+          disabled={uploading}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+        <div className="flex flex-col items-center justify-center gap-3">
+          {uploading ? (
+            <Loader2 className="w-10 h-10 text-teal-600 animate-spin" />
+          ) : (
+            <UploadCloud className="w-10 h-10 text-teal-600" />
+          )}
+          <div>
+            <p className="font-bold text-slate-800 text-sm">انقر لاختيار صور من المعرض أو التقاط صورة بكاميرا الهاتف</p>
+            <p className="text-xs text-slate-400 mt-1">حماية تامة وخصوصية طبية مشفرة</p>
+          </div>
+        </div>
+      </div>
+
+      {data.mediaKeys && data.mediaKeys.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {data.mediaKeys.map((_: string, idx: number) => (
+            <span key={idx} className="bg-emerald-100 text-emerald-800 text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5" /> صورة الحالة المرفقة ({idx + 1})
+            </span>
+          ))}
+        </div>
+      )}
+
+      <WizardButtons prev={prev} next={next} nextText="المتابعة للتأكيد النهائي" />
+    </div>
+  );
+}
+
+function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: any) {
+  const [conflictError, setConflictError] = useState('');
+  const [paymentAccounts, setPaymentAccounts] = useState(
+    '• بنك الكريمي: 1234567 (باسم عيادات دنت آند سكن)\n• محفظة فلوسك: 771234567\n• محفظة جايبي / ون كاش: 731234567\n• شبكة النجم / الامتياز: باسم المركز الرئيسي'
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPaymentDetails = async () => {
+      try {
+        const { data: settings } = await supabase
+          .from('ClinicSettings')
+          .select('payment_info')
+          .eq('id', 1)
+          .single();
+
+        if (isMounted && settings?.payment_info && settings.payment_info.trim() !== '') {
+          setPaymentAccounts(settings.payment_info);
+        }
+      } catch (e) {
+        console.log('Payment load error fallback', e);
+      }
+    };
+    fetchPaymentDetails();
+    return () => { isMounted = false; };
+  }, []);
+
+  const confirmReservation = async () => {
+    setLoading(true);
+    setConflictError('');
+
+    try {
+      const { data: conflictCheck } = await supabase
+        .from('Booking')
+        .select('id')
+        .eq('doctor_name', data.doctorName)
+        .eq('booking_date', data.date)
+        .eq('booking_time', data.timeSlot)
+        .neq('status', 'cancelled');
+
+      if (conflictCheck && conflictCheck.length > 0) {
+        setConflictError('عذراً! تم حجز هذا التوقيت للتو من قبل مراجع آخر. يرجى الرجوع واختيار وقت آخر.');
+        setLoading(false);
+        return;
+      }
+
+      const { error: insertError } = await supabase.from('Booking').insert([
+        {
+          branch_name: data.branchName,
+          branch_city: data.branchCity,
+          service_name: data.serviceName,
+          doctor_name: data.doctorName,
+          booking_date: data.date,
+          booking_time: data.timeSlot,
+          patient_name: data.patientName,
+          patient_phone: data.patientPhone,
+          payment_method: data.paymentMethod,
+          deposit_amount: data.depositAmount,
+          status: 'pending'
+        }
+      ]);
+
+      if (insertError) {
+        setConflictError('تعذر تأكيد الحجز حالياً. يرجى المحاولة مرة أخرى.');
+        setLoading(false);
+        return;
+      }
+
+      setLoading(false);
+      next();
+    } catch {
+      setLoading(false);
+      next();
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-slate-800">تفاصيل الحجز ومراجعة الطلب</h2>
+
+      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-3 text-sm">
+        <div className="flex justify-between py-1 border-b border-slate-200/60">
+          <span className="text-slate-500">اسم المراجع:</span>
+          <span className="font-bold text-slate-900">{data.patientName} (+967 {data.patientPhone})</span>
+        </div>
+        <div className="flex justify-between py-1 border-b border-slate-200/60">
+          <span className="text-slate-500">الفرع المختار:</span>
+          <span className="font-bold text-slate-900">{data.branchName} - {data.branchCity}</span>
+        </div>
+        <div className="flex justify-between py-1 border-b border-slate-200/60">
+          <span className="text-slate-500">الخدمة:</span>
+          <span className="font-bold text-teal-700">{data.serviceName}</span>
+        </div>
+        <div className="flex justify-between py-1 border-b border-slate-200/60">
+          <span className="text-slate-500">الطبيب المعالج:</span>
+          <span className="font-bold text-slate-900">{data.doctorName}</span>
+        </div>
+        <div className="flex justify-between py-1">
+          <span className="text-slate-500">الموعد:</span>
+          <span className="font-bold text-slate-900">{data.date} | الساعة {data.timeSlot}</span>
+        </div>
+      </div>
+
+      {conflictError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          <span>{conflictError}</span>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <label className="block text-xs font-bold text-slate-700">طريقة سداد العربون وتأكيد الحجز:</label>
+        
+        <div 
+          onClick={() => update({ paymentMethod: 'PAY_AT_CLINIC' })}
+          className={`p-4 rounded-xl border-2 cursor-pointer flex gap-3 transition ${
+            data.paymentMethod === 'PAY_AT_CLINIC' ? 'border-teal-600 bg-teal-50' : 'border-slate-200 bg-white'
+          }`}
+        >
+          <input 
+            type="radio" 
+            checked={data.paymentMethod === 'PAY_AT_CLINIC'} 
+            readOnly 
+            className="mt-1" 
+          />
+          <div>
+            <span className="font-bold text-slate-900 block text-sm">الدفع نقداً أو عبر شبكة الدفع عند الحضور للعيادة</span>
+            <span className="text-xs text-slate-500">سيتم إرسال رسالة تأكيد لتثبيت الموعد مجاناً</span>
+          </div>
+        </div>
+
+        <div 
+          onClick={() => update({ paymentMethod: 'PAY_ONLINE' })}
+          className={`p-4 rounded-xl border-2 cursor-pointer flex flex-col gap-3 transition ${
+            data.paymentMethod === 'PAY_ONLINE' ? 'border-teal-600 bg-teal-50' : 'border-slate-200 bg-white'
+          }`}
+        >
+          <div className="flex gap-3 items-start">
+            <input 
+              type="radio" 
+              checked={data.paymentMethod === 'PAY_ONLINE'} 
+              readOnly 
+              className="mt-1" 
+            />
+            <div>
+              <span className="font-bold text-slate-900 block text-sm">
+                سداد العربون عبر الحوالات السريعة / المحافظ الإلكترونية (${data.depositAmount || 20})
+              </span>
+              <span className="text-xs text-slate-500">حجز أولوية وتثبيت مباشر فوري بدون انتظار</span>
+            </div>
+          </div>
+
+          {data.paymentMethod === 'PAY_ONLINE' && (
+            <div className="mt-2 p-4 bg-white border border-teal-300 rounded-xl space-y-2.5 shadow-sm text-right">
+              <div className="font-bold text-teal-800 text-xs sm:text-sm flex items-center gap-2 border-b border-teal-100 pb-2">
+                <CreditCard className="w-4 h-4 text-teal-600" />
+                حسابات التحويل المعتمدة لسداد العربون (${data.depositAmount || 20}):
+              </div>
+              <div className="whitespace-pre-line text-slate-800 leading-relaxed font-sans text-xs bg-slate-50 p-3 rounded-lg border border-slate-200 select-all font-medium">
+                {paymentAccounts}
+              </div>
+              <p className="text-[11px] text-teal-700 font-semibold">
+                💡 بعد التحويل، ستتمكن من إرفاق صورة السند مباشرة عبر واتساب العيادة في الخطوة التالية.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-3 pt-4 border-t border-slate-100">
+        <button onClick={prev} disabled={loading} className="px-5 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">
+          رجوع
+        </button>
+        <button 
+          onClick={confirmReservation} 
+          disabled={loading}
+          className="flex-1 py-4 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20"
+        >
+          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+          تأكيد الموعد النهائي
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Step6SuccessDirectMaps({ data }: any) {
+  const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${data.branchLat},${data.branchLng}&travelmode=driving`;
+  
+  const [clinicPhone, setClinicPhone] = useState('770000000');
+
+  useEffect(() => {
+    const fetchClinicPhone = async () => {
+      try {
+        const { data: settings } = await supabase
+          .from('ClinicSettings')
+          .select('clinic_phone')
+          .eq('id', 1)
+          .single();
+
+        if (settings?.clinic_phone) {
+          setClinicPhone(settings.clinic_phone);
+        }
+      } catch (e) {
+        console.log('Clinic phone error fallback', e);
+      }
+    };
+    fetchClinicPhone();
+  }, []);
+
+  const bookingCode = `YE-${Math.floor(10000 + Math.random() * 90000)}`;
+
+  let targetPhone = clinicPhone.replace(/[^0-9]/g, '');
+  if (targetPhone.startsWith('0')) targetPhone = targetPhone.substring(1);
+  if (!targetPhone.startsWith('967')) {
+    targetPhone = '967' + targetPhone;
+  }
+
+  const paymentText = data.paymentMethod === 'PAY_ONLINE' 
+    ? `سداد إلكتروني (عربون $${data.depositAmount}) - مرفق إشعار التحويل` 
+    : 'سداد نقدي عند الحضور';
+
+  const whatsappMessage = encodeURIComponent(
+    `مرحباً عيادات دنت آند سكن،\n` +
+    `لقد قمت بحجز موعد جديد عبر التطبيق:\n\n` +
+    `📌 رقم الحجز: ${bookingCode}\n` +
+    `👤 اسم المراجع: ${data.patientName}\n` +
+    `📱 رقم المراجع: +967 ${data.patientPhone}\n` +
+    `🏥 الفرع: ${data.branchName} (${data.branchCity})\n` +
+    `🩺 الخدمة: ${data.serviceName}\n` +
+    `👨‍⚕️ الطبيب: ${data.doctorName}\n` +
+    `📅 الموعد: ${data.date} | ${data.timeSlot}\n` +
+    `💳 طريقة السداد: ${paymentText}\n\n` +
+    `أرجو تأكيد استلام الموعد، وشكراً لكم!`
+  );
+
+  const whatsappUrl = `https://wa.me/${targetPhone}?text=${whatsappMessage}`;
+
+  return (
+    <div className="text-center py-6 space-y-6">
+      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+        <CheckCircle className="w-9 h-9" />
+      </div>
+
+      <div>
+        <h2 className="text-2xl font-black text-slate-900">تم تسجيل موعدك بنجاح!</h2>
+        <p className="text-slate-500 text-sm mt-1">
+          أهلاً بك يا {data.patientName}، نحن بانتظار تشريفك في {data.branchName}
+        </p>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-right max-w-sm mx-auto space-y-2 text-xs sm:text-sm">
+        <div className="flex justify-between">
+          <span className="text-slate-400">رقم الحجز:</span>
+          <span className="font-mono font-bold text-teal-700">#{bookingCode}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الفرع:</span>
+          <span className="font-bold text-slate-800">{data.branchName} ({data.branchCity})</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الخدمة:</span>
+          <span className="font-bold text-slate-800">{data.serviceName}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">طريقة السداد:</span>
+          <span className="font-bold text-slate-800">
+            {data.paymentMethod === 'PAY_ONLINE' ? `إلكتروني (عربون $${data.depositAmount})` : 'نقداً بالعيادة'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الموعد المحدد:</span>
+          <span className="font-bold text-slate-800">{data.date} الساعة {data.timeSlot}</span>
+        </div>
+      </div>
+
+      <div className="pt-2 space-y-3 max-w-sm mx-auto">
+        <a 
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-2 w-full py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
+        >
+          <PhoneCall className="w-5 h-5" />
+          إرسال التفاصيل وإشعار التحويل للواتساب
+        </a>
+
+        <a 
+          href={gmapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition shadow-md text-sm"
+        >
+          <Navigation className="w-4 h-4 text-teal-400" />
+          التوجه الآن عبر Google Maps
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function WizardButtons({ prev, next, nextDisabled = false, nextText = "متابعة" }: any) {
+  return (
+    <div className="flex gap-3 pt-6 border-t border-slate-100">
+      {prev && (
+        <button onClick={prev} className="px-5 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
+          رجوع
+        </button>
+      )}
+      <button 
+        onClick={next} 
+        disabled={nextDisabled}
+        className="flex-1 py-3.5 bg-teal-600 text-white rounded-xl font-bold hover:bg-teal-700 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-teal-600/20"
+      >
+        {nextText} <ChevronLeft className="w-5 h-5" />
+      </button>
+    </div>
+  );
+}
