@@ -25,20 +25,21 @@ export default function AdminDashboard() {
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'doctors' | 'bookings' | 'settings'>('doctors');
+  const [activeTab, setActiveTab] = useState<'doctors' | 'bookings' | 'settings'>('bookings');
 
   // بيانات الأطباء والحجوزات
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
 
-  // إعدادات العيادة (رقم الواتساب)
+  // إعدادات العيادة
   const [clinicPhone, setClinicPhone] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
-  // نموذج إضافة طبيب (تمت إزالة خانة الهاتف)
+  // نموذج إضافة طبيب
   const [newDoctor, setNewDoctor] = useState({
     name: '',
     specialty: '',
@@ -119,7 +120,6 @@ export default function AdminDashboard() {
     setSavingSettings(true);
     setSettingsSuccess(false);
 
-    // تنظيف الرقم من أي رموز زائدة
     const cleaned = clinicPhone.replace(/[^0-9]/g, '');
 
     const { error } = await supabase
@@ -155,6 +155,22 @@ export default function AdminDashboard() {
 
     if (data && !error) setBookings(data);
     setLoadingBookings(false);
+  };
+
+  // تحديث حالة الحجز في قاعدة البيانات
+  const handleUpdateStatus = async (bookingId: string | number, newStatus: string) => {
+    setUpdatingStatusId(bookingId);
+    const { error } = await supabase
+      .from('Booking')
+      .update({ status: newStatus })
+      .eq('id', bookingId);
+
+    if (!error) {
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
+    } else {
+      alert('تعذر تحديث الحالة، يرجى المحاولة لاحقاً');
+    }
+    setUpdatingStatusId(null);
   };
 
   const handleAddDoctor = async (e: React.FormEvent) => {
@@ -274,20 +290,20 @@ export default function AdminDashboard() {
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 flex-grow sm:flex-grow-0">
               <button
-                onClick={() => { setActiveTab('doctors'); fetchDoctors(); }}
-                className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition ${
-                  activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
-                }`}
-              >
-                الأطباء ({doctors.length})
-              </button>
-              <button
                 onClick={() => { setActiveTab('bookings'); fetchBookings(); }}
                 className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition ${
                   activeTab === 'bookings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                 }`}
               >
                 المواعيد ({bookings.length})
+              </button>
+              <button
+                onClick={() => { setActiveTab('doctors'); fetchDoctors(); }}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg font-bold text-xs transition ${
+                  activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
+                }`}
+              >
+                الأطباء ({doctors.length})
               </button>
               <button
                 onClick={() => { setActiveTab('settings'); fetchClinicSettings(); }}
@@ -309,7 +325,126 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* 1. تبويب إدارة الأطباء والتخصصات */}
+        {/* 1. تبويب جدول المواعيد مع التحكم في الحالة */}
+        {activeTab === 'bookings' && (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد وإدارة الحالات
+              </h2>
+              <button 
+                onClick={fetchBookings}
+                className="text-xs font-bold text-teal-700 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200 hover:bg-teal-100 transition"
+              >
+                تحديث الجدول
+              </button>
+            </div>
+
+            {loadingBookings ? (
+              <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-600 mx-auto" /></div>
+            ) : bookings.length === 0 ? (
+              <div className="text-center py-10 space-y-2">
+                <Clock className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-slate-500 text-sm">لا توجد حجوزات مسجلة بعد.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs sm:text-sm">
+                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                    <tr>
+                      <th className="p-3">المريض</th>
+                      <th className="p-3">الهاتف</th>
+                      <th className="p-3">الخدمة</th>
+                      <th className="p-3">الطبيب والفرع</th>
+                      <th className="p-3">الموعد</th>
+                      <th className="p-3">حالة الحجز</th>
+                      <th className="p-3">تواصل</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {bookings.map((b) => {
+                      let cleanPhone = (b.patient_phone || '').replace(/[^0-9]/g, '');
+                      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
+                      if (!cleanPhone.startsWith('967') && cleanPhone.length === 9) {
+                        cleanPhone = '967' + cleanPhone;
+                      }
+
+                      const currentStatus = b.status || 'pending';
+
+                      const adminReplyMessage = encodeURIComponent(
+                        `مرحباً بك أستاذ/ة ${b.patient_name || ''}،\n` +
+                        `بخصوص موعدك في عياداتنا:\n` +
+                        `🏥 الفرع: ${b.branch_name}\n` +
+                        `🩺 الخدمة: ${b.service_name}\n` +
+                        `👨‍⚕️ الطبيب: ${b.doctor_name}\n` +
+                        `📅 الموعد: ${b.booking_date} الساعة ${b.booking_time}\n` +
+                        `حالة الموعد الحالية: ${
+                          currentStatus === 'confirmed' ? 'مؤكد ✅' :
+                          currentStatus === 'completed' ? 'تم الكشف بنجاح 🩺' :
+                          currentStatus === 'cancelled' ? 'ملغي ❌' : 'قيد المراجعة ⏳'
+                        }\n\nنتمنى لك دوام الصحة والعافية!`
+                      );
+
+                      const patientWaLink = `https://wa.me/${cleanPhone}?text=${adminReplyMessage}`;
+
+                      return (
+                        <tr key={b.id} className="hover:bg-slate-50/80">
+                          <td className="p-3 font-bold text-slate-900">{b.patient_name || 'غير محدد'}</td>
+                          <td className="p-3 text-slate-600 font-mono">
+                            <span className="text-slate-400 text-[11px] ltr inline-block mr-1">+967</span>
+                            {b.patient_phone || '-'}
+                          </td>
+                          <td className="p-3 text-teal-700 font-medium">{b.service_name || '-'}</td>
+                          <td className="p-3 text-slate-800">
+                            <div>{b.doctor_name || '-'}</div>
+                            <span className="text-[10px] text-slate-400 block">{b.branch_name}</span>
+                          </td>
+                          <td className="p-3 text-slate-800 font-mono font-medium whitespace-nowrap">
+                            {b.booking_date} <br/><span className="text-xs text-slate-500">{b.booking_time}</span>
+                          </td>
+                          <td className="p-3">
+                            {updatingStatusId === b.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
+                            ) : (
+                              <select
+                                value={currentStatus}
+                                onChange={(e) => handleUpdateStatus(b.id, e.target.value)}
+                                className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer ${
+                                  currentStatus === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                  currentStatus === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                  currentStatus === 'cancelled' ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                                  'bg-amber-50 text-amber-700 border-amber-300'
+                                }`}
+                              >
+                                <option value="pending">⏳ قيد المراجعة</option>
+                                <option value="confirmed">✅ مؤكد</option>
+                                <option value="completed">🩺 تم الكشف</option>
+                                <option value="cancelled">❌ ملغي</option>
+                              </select>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <a
+                              href={patientWaLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg border border-emerald-200 text-xs font-bold transition shadow-sm whitespace-nowrap"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              واتساب
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 2. تبويب الأطباء والتخصصات */}
         {activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -424,95 +559,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 2. تبويب جدول المواعيد والحجوزات */}
-        {activeTab === 'bookings' && (
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-600" /> المواعيد المسجلة في النظام
-              </h2>
-              <button 
-                onClick={fetchBookings}
-                className="text-xs font-bold text-teal-700 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200 hover:bg-teal-100 transition"
-              >
-                تحديث الجدول
-              </button>
-            </div>
-
-            {loadingBookings ? (
-              <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-600 mx-auto" /></div>
-            ) : bookings.length === 0 ? (
-              <div className="text-center py-10 space-y-2">
-                <Clock className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-slate-500 text-sm">لا توجد حجوزات مسجلة بعد.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs sm:text-sm">
-                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                    <tr>
-                      <th className="p-3">المريض</th>
-                      <th className="p-3">رقم الهاتف</th>
-                      <th className="p-3">الخدمة</th>
-                      <th className="p-3">الطبيب</th>
-                      <th className="p-3">الفرع</th>
-                      <th className="p-3">الموعد</th>
-                      <th className="p-3">تواصل</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {bookings.map((b, i) => {
-                      let cleanPhone = (b.patient_phone || '').replace(/[^0-9]/g, '');
-                      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
-                      if (!cleanPhone.startsWith('967') && cleanPhone.length === 9) {
-                        cleanPhone = '967' + cleanPhone;
-                      }
-
-                      const adminReplyMessage = encodeURIComponent(
-                        `مرحباً بك أستاذ/ة ${b.patient_name || ''}،\n` +
-                        `نؤكد لك استلام حجزك في عياداتنا:\n` +
-                        `🏥 الفرع: ${b.branch_name}\n` +
-                        `🩺 الخدمة: ${b.service_name}\n` +
-                        `👨‍⚕️ الطبيب: ${b.doctor_name}\n` +
-                        `📅 الموعد: ${b.booking_date} الساعة ${b.booking_time}\n\n` +
-                        `يرجى تأكيد الحضور قبل الموعد بنصف ساعة.`
-                      );
-
-                      const patientWaLink = `https://wa.me/${cleanPhone}?text=${adminReplyMessage}`;
-
-                      return (
-                        <tr key={i} className="hover:bg-slate-50/80">
-                          <td className="p-3 font-bold text-slate-900">{b.patient_name || 'غير محدد'}</td>
-                          <td className="p-3 text-slate-600 font-mono">
-                            <span className="text-slate-400 text-[11px] ltr inline-block mr-1">+967</span>
-                            {b.patient_phone || '-'}
-                          </td>
-                          <td className="p-3 text-teal-700 font-medium">{b.service_name || '-'}</td>
-                          <td className="p-3 text-slate-800">{b.doctor_name || '-'}</td>
-                          <td className="p-3 text-slate-600">{b.branch_name || '-'}</td>
-                          <td className="p-3 text-slate-800 font-mono font-medium">{b.booking_date} {b.booking_time}</td>
-                          <td className="p-3">
-                            <a
-                              href={patientWaLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg border border-emerald-200 text-xs font-bold transition shadow-sm"
-                            >
-                              <Phone className="w-3.5 h-3.5" />
-                              واتساب المريض
-                            </a>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 3. تبويب إعدادات العيادة (رقم الواتساب الرسمي المعتمد) */}
+        {/* 3. تبويب إعدادات العيادة */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
             <div className="border-b border-slate-100 pb-3">
