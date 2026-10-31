@@ -587,14 +587,13 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
       const filePath = `consultations/${fileName}`;
 
-      const { data: uploadData, error } = await supabase.storage.from('consultations').upload(filePath, file);
-      if (!error && uploadData) {
-        newKeys.push(uploadData.path);
+      const { data: uploadRes, error } = await supabase.storage.from('consultations').upload(filePath, file);
+      if (!error && uploadRes) {
+        newKeys.push(uploadRes.path);
       } else {
-        // إذا كان مسار الرفع مباشراً
         newKeys.push(filePath);
       }
     }
@@ -697,7 +696,11 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
         return;
       }
 
-      // إدخال الحجز مع تمرير مصفوفة الصور media_keys
+      // تنظيف رقم هاتف المراجع للتخزين النظيف
+      let pPhone = (data.patientPhone || '').replace(/[^0-9]/g, '');
+      if (pPhone.startsWith('967')) pPhone = pPhone.slice(3);
+      if (pPhone.startsWith('0')) pPhone = pPhone.slice(1);
+
       const { error: insertError } = await supabase.from('Booking').insert([
         {
           branch_name: data.branchName,
@@ -707,7 +710,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           booking_date: data.date,
           booking_time: data.timeSlot,
           patient_name: data.patientName,
-          patient_phone: data.patientPhone,
+          patient_phone: pPhone,
           payment_method: data.paymentMethod,
           deposit_amount: data.depositAmount,
           media_keys: data.mediaKeys || [],
@@ -857,18 +860,70 @@ function Step6SuccessDirectMaps({ data }: any) {
           setClinicPhone(settings.clinic_phone);
         }
       } catch (e) {
-        console.log('Clinic phone load fallback', e);
+        console.log('Clinic phone error fallback', e);
       }
     };
     fetchClinicPhone();
   }, []);
 
-  const bookingCode = `YE-${Math.floor(10000 + Math.random() * 90000)}`;  // تنظيف رقم العيادة بدقة لضمان قبوله في واتساب let cleanClinicPhone = clinicPhone.replace(/[^0-9]/g, ''); if (cleanClinicPhone.startsWith('967')) { cleanClinicPhone = cleanClinicPhone.slice(3); } if (cleanClinicPhone.startsWith('0')) { cleanClinicPhone = cleanClinicPhone.slice(1); } const finalClinicNumber = '967' + cleanClinicPhone;  const paymentText = data.paymentMethod === 'PAY_ONLINE' ? `سداد الكتروني (عربون $${data.depositAmount}) - مرفق الاشعار` : 'سداد نقدي عند الحضور';  // نص رسالة مبسط ومتوافق مع جميع الهواتف const whatsappMessage = encodeURIComponent( `مرحبا عيادات دنت اند سكن،\n` + `تم تسجيل حجز جديد عبر الموقع:\n` + `- رقم الحجز: ${bookingCode}\n` +
-    `- الاسم: ${data.patientName}\n` + `- الهاتف: +967${data.patientPhone}\n` +
-    `- الفرع: ${data.branchName} (${data.branchCity})\n` +
-    `- الخدمة: ${data.serviceName}\n` + `- الطبيب: ${data.doctorName}\n` +
-    `- الموعد: ${data.date} \vert{}${data.timeSlot}\n` +
-    `- طريقة السداد: ${paymentText}\n\n` + `يرجى تأكيد استلام الحجز.` );  const whatsappUrl = `https://api.whatsapp.com/send?phone=${finalClinicNumber}&text=${whatsappMessage}`;  return ( <div className="text-center py-6 space-y-6"> <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto"> <CheckCircle className="w-9 h-9" /> </div>  <div> <h2 className="text-2xl font-black text-slate-900">تم تسجيل موعدك بنجاح!</h2> <p className="text-slate-500 text-sm mt-1"> أهلاً بك يا {data.patientName}، نحن بانتظار تشريفك في {data.branchName} </p> </div>  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-right max-w-sm mx-auto space-y-2 text-xs sm:text-sm"> <div className="flex justify-between"> <span className="text-slate-400">رقم الحجز:</span> <span className="font-mono font-bold text-teal-700">#{bookingCode}</span> </div> <div className="flex justify-between"> <span className="text-slate-400">الفرع:</span> <span className="font-bold text-slate-800">{data.branchName} ({data.branchCity})</span> </div> <div className="flex justify-between"> <span className="text-slate-400">الخدمة:</span> <span className="font-bold text-slate-800">{data.serviceName}</span> </div> <div className="flex justify-between"> <span className="text-slate-400">طريقة السداد:</span> <span className="font-bold text-slate-800"> {data.paymentMethod === 'PAY_ONLINE' ? `إلكتروني (عربون $${data.depositAmount})` : 'نقداً بالعيادة'}
+  const bookingCode = `YE-${Math.floor(10000 + Math.random() * 90000)}`;
+
+  // تنظيف شامل ومضمون لرقم العيادة
+  let cleanNumber = clinicPhone.replace(/[^0-9]/g, '');
+  if (cleanNumber.startsWith('967')) cleanNumber = cleanNumber.slice(3);
+  if (cleanNumber.startsWith('0')) cleanNumber = cleanNumber.slice(1);
+  const targetWhatsApp = '967' + cleanNumber;
+
+  const paymentText = data.paymentMethod === 'PAY_ONLINE' 
+    ? `سداد إلكتروني (عربون $${data.depositAmount}) - مرفق إشعار التحويل` 
+    : 'سداد نقدي عند الحضور';
+
+  const whatsappMessage = encodeURIComponent(
+    `مرحبا عيادات دنت اند سكن،\n` +
+    `لقد قمت بحجز موعد جديد عبر التطبيق:\n\n` +
+    `* رقم الحجز: ${bookingCode}\n` +
+    `* اسم المراجع: ${data.patientName}\n` +
+    `* رقم الهاتف: +967${data.patientPhone}\n` +
+    `* الفرع: ${data.branchName} (${data.branchCity})\n` +
+    `* الخدمة: ${data.serviceName}\n` +
+    `* الطبيب: ${data.doctorName}\n` +
+    `* الموعد: ${data.date} | ${data.timeSlot}\n` +
+    `* طريقة السداد: ${paymentText}\n\n` +
+    `يرجى تأكيد الحجز، شكراً لكم.`
+  );
+
+  const whatsappUrl = `https://api.whatsapp.com/send?phone=${targetWhatsApp}&text=${whatsappMessage}`;
+
+  return (
+    <div className="text-center py-6 space-y-6">
+      <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+        <CheckCircle className="w-9 h-9" />
+      </div>
+
+      <div>
+        <h2 className="text-2xl font-black text-slate-900">تم تسجيل موعدك بنجاح!</h2>
+        <p className="text-slate-500 text-sm mt-1">
+          أهلاً بك يا {data.patientName}، نحن بانتظار تشريفك في {data.branchName}
+        </p>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-right max-w-sm mx-auto space-y-2 text-xs sm:text-sm">
+        <div className="flex justify-between">
+          <span className="text-slate-400">رقم الحجز:</span>
+          <span className="font-mono font-bold text-teal-700">#{bookingCode}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الفرع:</span>
+          <span className="font-bold text-slate-800">{data.branchName} ({data.branchCity})</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">الخدمة:</span>
+          <span className="font-bold text-slate-800">{data.serviceName}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">طريقة السداد:</span>
+          <span className="font-bold text-slate-800">
+            {data.paymentMethod === 'PAY_ONLINE' ? `إلكتروني (عربون $${data.depositAmount})` : 'نقداً بالعيادة'}
           </span>
         </div>
         <div className="flex justify-between">
