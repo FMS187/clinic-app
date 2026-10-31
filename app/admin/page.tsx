@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   Plus, Trash2, Calendar, Phone, 
   MapPin, Shield, Lock, Stethoscope, 
-  Clock, AlertCircle, Loader2, LogOut, Mail, Settings, CheckCircle2, CreditCard
+  Clock, AlertCircle, Loader2, LogOut, Mail, Settings, CheckCircle2, CreditCard,
+  Image as ImageIcon, X
 } from 'lucide-react';
 
 interface Doctor {
@@ -34,13 +35,15 @@ export default function AdminDashboard() {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
 
-  // إعدادات العيادة والحسابات المالية
+  // معاينة الصور المنبثقة
+  const [previewImages, setPreviewImages] = useState<string[] | null>(null);
+
+  // إعدادات العيادة
   const [clinicPhone, setClinicPhone] = useState('');
   const [paymentInfo, setPaymentInfo] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
-  // نموذج إضافة طبيب
   const [newDoctor, setNewDoctor] = useState({
     name: '',
     specialty: '',
@@ -209,6 +212,14 @@ export default function AdminDashboard() {
     }
   };
 
+  // استخراج الروابط الكاملة للصور
+  const getImageUrl = (path: string) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    const { data } = supabase.storage.from('consultations').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   if (loadingAuth) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -330,12 +341,12 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* جدول المواعيد */}
+        {/* 1. جدول المواعيد والحالات والصور */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد وإدارة الحالات
+                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد والحالات المرفقة
               </h2>
               <button 
                 onClick={fetchBookings}
@@ -360,8 +371,9 @@ export default function AdminDashboard() {
                       <th className="p-3">المريض</th>
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الخدمة</th>
-                      <th className="p-3">طريقة الدفع</th>
+                      <th className="p-3">الطبيب</th>
                       <th className="p-3">الموعد</th>
+                      <th className="p-3">صور الحالة</th>
                       <th className="p-3">حالة الحجز</th>
                       <th className="p-3">تواصل</th>
                     </tr>
@@ -375,10 +387,11 @@ export default function AdminDashboard() {
                       }
 
                       const currentStatus = b.status || 'pending';
+                      const hasPhotos = b.media_keys && Array.isArray(b.media_keys) && b.media_keys.length > 0;
 
                       const adminReplyMessage = encodeURIComponent(
                         `مرحباً بك أستاذ/ة ${b.patient_name || ''}،\n` +
-                        `بخصوص موعدك في عياداتنا:\n` +
+                        `نؤكد استلام موعدك في عياداتنا:\n` +
                         `🏥 الفرع: ${b.branch_name}\n` +
                         `🩺 الخدمة: ${b.service_name}\n` +
                         `👨‍⚕️ الطبيب: ${b.doctor_name}\n` +
@@ -400,15 +413,25 @@ export default function AdminDashboard() {
                             {b.patient_phone || '-'}
                           </td>
                           <td className="p-3 text-teal-700 font-medium">{b.service_name || '-'}</td>
-                          <td className="p-3 text-slate-600 text-xs">
-                            {b.payment_method === 'PAY_ONLINE' ? (
-                              <span className="bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded">محفظة / حوالة (${b.deposit_amount})</span>
-                            ) : (
-                              <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded">نقداً بالعيادة</span>
-                            )}
+                          <td className="p-3 text-slate-800">
+                            <div>{b.doctor_name || '-'}</div>
+                            <span className="text-[10px] text-slate-400 block">{b.branch_name}</span>
                           </td>
                           <td className="p-3 text-slate-800 font-mono font-medium whitespace-nowrap">
                             {b.booking_date} <br/><span className="text-xs text-slate-500">{b.booking_time}</span>
+                          </td>
+                          <td className="p-3">
+                            {hasPhotos ? (
+                              <button
+                                onClick={() => setPreviewImages(b.media_keys.map((k: string) => getImageUrl(k)))}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-50 text-teal-700 hover:bg-teal-100 rounded-lg border border-teal-200 text-xs font-bold transition shadow-sm"
+                              >
+                                <ImageIcon className="w-3.5 h-3.5 text-teal-600" />
+                                {b.media_keys.length} صور
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 text-xs">لا يوجد</span>
+                            )}
                           </td>
                           <td className="p-3">
                             {updatingStatusId === b.id ? (
@@ -417,7 +440,7 @@ export default function AdminDashboard() {
                               <select
                                 value={currentStatus}
                                 onChange={(e) => handleUpdateStatus(b.id, e.target.value)}
-                                className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer ${
+                                className={`text-xs font-bold px-2 py-1.5 rounded-lg border outline-none cursor-pointer ${
                                   currentStatus === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                                   currentStatus === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-300' :
                                   currentStatus === 'cancelled' ? 'bg-rose-50 text-rose-700 border-rose-300' :
@@ -452,7 +475,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* إدارة الأطباء */}
+        {/* 2. تبويب الأطباء */}
         {activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -567,7 +590,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* إعدادات العيادة والمحافظ المالية */}
+        {/* 3. تبويب الإعدادات */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
             <div className="border-b border-slate-100 pb-3">
@@ -598,11 +621,10 @@ export default function AdminDashboard() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <CreditCard className="w-4 h-4 text-teal-600" /> بيانات المحافظ والحسابات البنكية (تظهر للمريض عند الدفع الإلكتروني)
+                  <CreditCard className="w-4 h-4 text-teal-600" /> بيانات المحافظ والحسابات البنكية
                 </label>
                 <textarea
                   rows={4}
-                  placeholder="مثال:&#10;• بنك الكريمي: 1234567 (باسم عيادات دنت آند سكن)&#10;• محفظة فلوسك: 771234567&#10;• محفظة جايبي / ون كاش: 731234567&#10;• شبكة النجم / الامتياز: باسم المركز الرئيسي"
                   value={paymentInfo}
                   onChange={(e) => setPaymentInfo(e.target.value)}
                   className="w-full p-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none leading-relaxed"
@@ -627,6 +649,45 @@ export default function AdminDashboard() {
         )}
 
       </div>
+
+      {/* نافذة معاينة الصور المنبثقة */}
+      {previewImages && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-teal-600" /> الصور السريرية المرفقة من المريض
+              </h3>
+              <button 
+                onClick={() => setPreviewImages(null)}
+                className="p-1 text-slate-400 hover:text-slate-800 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {previewImages.map((src, i) => (
+                <div key={i} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 relative group">
+                  <img 
+                    src={src} 
+                    alt={`حالة سريرية ${i + 1}`} 
+                    className="w-full h-52 object-cover" 
+                  />
+                  <a 
+                    href={src} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="absolute inset-0 bg-black/40 text-white font-bold text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                  >
+                    عرض بالحجم الكامل ↗
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
