@@ -26,7 +26,7 @@ export default function AdminDashboard() {
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'doctors' | 'bookings' | 'settings'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'doctors' | 'settings'>('bookings');
 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
@@ -34,7 +34,7 @@ export default function AdminDashboard() {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
 
-  // نافذة معاينة الصور
+  // نافذة معاينة الصور السريرية
   const [previewImages, setPreviewImages] = useState<string[] | null>(null);
 
   const [clinicPhone, setClinicPhone] = useState('');
@@ -123,13 +123,15 @@ export default function AdminDashboard() {
     setSavingSettings(true);
     setSettingsSuccess(false);
 
-    const cleaned = clinicPhone.replace(/[^0-9]/g, '');
+    let clean = clinicPhone.replace(/[^0-9]/g, '');
+    if (clean.startsWith('967')) clean = clean.slice(3);
+    if (clean.startsWith('0')) clean = clean.slice(1);
 
     const { error } = await supabase
       .from('ClinicSettings')
       .upsert({ 
         id: 1, 
-        clinic_phone: cleaned,
+        clinic_phone: clean,
         payment_info: paymentInfo
       });
 
@@ -338,12 +340,12 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* جدول المواعيد والحالات المرفقة */}
+        {/* 1. جدول المواعيد والحالات المرفقة */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد وإدارة الحالات
+                <Calendar className="w-5 h-5 text-teal-600" /> جدول المواعيد والحالات المرفقة
               </h2>
               <button 
                 onClick={fetchBookings}
@@ -378,32 +380,31 @@ export default function AdminDashboard() {
                   <tbody className="divide-y divide-slate-100">
                     {bookings.map((b) => {
                       let cleanPhone = (b.patient_phone || '').replace(/[^0-9]/g, '');
-                      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
-                      if (!cleanPhone.startsWith('967') && cleanPhone.length === 9) {
-                        cleanPhone = '967' + cleanPhone;
-                      }
+                      if (cleanPhone.startsWith('967')) cleanPhone = cleanPhone.slice(3);
+                      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
+                      const finalPatientNumber = '967' + cleanPhone;
 
                       const currentStatus = b.status || 'pending';
                       const hasPhotos = b.media_keys && Array.isArray(b.media_keys) && b.media_keys.length > 0;
 
                       const adminReplyMessage = encodeURIComponent(
-                        `مرحباً بك أستاذ/ة ${b.patient_name || ''}،\n` +
+                        `مرحبا بك أستاذ/ة ${b.patient_name || ''}،\n` +
                         `نؤكد استلام موعدك في عياداتنا:\n` +
-                        `🏥 الفرع: ${b.branch_name}\n` +
-                        `🩺 الخدمة: ${b.service_name}\n` +
-                        `👨‍⚕️ الطبيب: ${b.doctor_name}\n` +
-                        `📅 الموعد: ${b.booking_date} الساعة ${b.booking_time}\n` +
+                        `* الفرع: ${b.branch_name}\n` +
+                        `* الخدمة: ${b.service_name}\n` +
+                        `* الطبيب: ${b.doctor_name}\n` +
+                        `* الموعد: ${b.booking_date} الساعة ${b.booking_time}\n\n` +
                         `نتمنى لك دوام الصحة والعافية!`
                       );
 
-                      const patientWaLink = `https://wa.me/${cleanPhone}?text=${adminReplyMessage}`;
+                      const patientWaLink = `https://api.whatsapp.com/send?phone=${finalPatientNumber}&text=${adminReplyMessage}`;
 
                       return (
                         <tr key={b.id} className="hover:bg-slate-50/80">
                           <td className="p-3 font-bold text-slate-900">{b.patient_name || 'غير محدد'}</td>
                           <td className="p-3 text-slate-600 font-mono">
                             <span className="text-slate-400 text-[11px] ltr inline-block mr-1">+967</span>
-                            {b.patient_phone || '-'}
+                            {cleanPhone || '-'}
                           </td>
                           <td className="p-3 text-teal-700 font-medium">{b.service_name || '-'}</td>
                           <td className="p-3 text-slate-800">
@@ -433,7 +434,7 @@ export default function AdminDashboard() {
                               <select
                                 value={currentStatus}
                                 onChange={(e) => handleUpdateStatus(b.id, e.target.value)}
-                                className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer ${
+                                className={`text-xs font-bold px-2 py-1.5 rounded-lg border outline-none cursor-pointer ${
                                   currentStatus === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
                                   currentStatus === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-300' :
                                   currentStatus === 'cancelled' ? 'bg-rose-50 text-rose-700 border-rose-300' :
@@ -468,7 +469,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* باقي التبويبات (الأطباء والإعدادات) */}
+        {/* 2. تبويب الأطباء */}
         {activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -583,6 +584,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* 3. تبويب الإعدادات */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-xl mx-auto space-y-6">
             <div className="border-b border-slate-100 pb-3">
@@ -608,7 +610,7 @@ export default function AdminDashboard() {
                     className="w-full p-3 border border-slate-300 rounded-l-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none font-mono"
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">أدخل الرقم بدون الصفر الأول (مثال: 771234567)</p>
+                <p className="text-[11px] text-slate-400 mt-1">أدخل الرقم بدون الصفر الأول وبدون رمز الدولة (مثال: 771234567)</p>
               </div>
 
               <div>
