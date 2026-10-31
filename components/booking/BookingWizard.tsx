@@ -586,13 +586,15 @@ function Step4ConsultationMedia({ data, update, next, prev }: any) {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const fileName = `${Date.now()}-${file.name}`;
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
       const filePath = `consultations/${fileName}`;
 
-      const { error } = await supabase.storage.from('consultations').upload(filePath, file);
-      if (error) {
-        newKeys.push(`fallback_${file.name}`);
+      const { data: uploadData, error } = await supabase.storage.from('consultations').upload(filePath, file);
+      if (!error && uploadData) {
+        newKeys.push(uploadData.path);
       } else {
+        // إذا كان مسار الرفع مباشراً
         newKeys.push(filePath);
       }
     }
@@ -695,6 +697,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
         return;
       }
 
+      // إدخال الحجز مع تمرير مصفوفة الصور media_keys
       const { error: insertError } = await supabase.from('Booking').insert([
         {
           branch_name: data.branchName,
@@ -707,6 +710,7 @@ function Step5ReviewCheckout({ data, update, next, prev, setLoading, loading }: 
           patient_phone: data.patientPhone,
           payment_method: data.paymentMethod,
           deposit_amount: data.depositAmount,
+          media_keys: data.mediaKeys || [],
           status: 'pending'
         }
       ]);
