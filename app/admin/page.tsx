@@ -6,7 +6,7 @@ import {
   Building2, Users, Calendar, Phone, Plus, Trash2, 
   Search, Shield, Lock, Stethoscope, Clock, AlertCircle, 
   Loader2, LogOut, Mail, Settings, CheckCircle2, Edit3, Check,
-  Image as ImageIcon, X, Filter, MapPin
+  Image as ImageIcon, X, MapPin
 } from 'lucide-react';
 
 interface Facility {
@@ -45,7 +45,7 @@ export default function AdminDashboard() {
   // التبويبات النشطة
   const [activeTab, setActiveTab] = useState<'bookings' | 'facilities' | 'doctors' | 'settings'>('bookings');
 
-  // البيانات المخزنة
+  // البيانات
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
@@ -65,7 +65,7 @@ export default function AdminDashboard() {
   // نافذة معاينة الصور السريرية (للمدير العام فقط)
   const [previewImages, setPreviewImages] = useState<string[] | null>(null);
 
-  // نموذج إضافة منشأة طبية جديدة
+  // إضافة منشأة
   const [newFacility, setNewFacility] = useState({
     name: '',
     city: 'صنعاء',
@@ -75,7 +75,7 @@ export default function AdminDashboard() {
     facility_type: 'hospital'
   });
 
-  // نموذج إضافة طبيب جديد
+  // إضافة طبيب
   const [newDoctor, setNewDoctor] = useState({
     name: '',
     specialty: '',
@@ -94,6 +94,43 @@ export default function AdminDashboard() {
     const role = sessionUser.user_metadata?.role === 'receptionist' ? 'receptionist' as const : 'admin' as const;
     const facilityId = sessionUser.user_metadata?.facility_id || null;
     return { role, facilityId };
+  };
+
+  const fetchAllData = async (role: 'admin' | 'receptionist', facilityId: string | null) => {
+    setLoadingData(true);
+    try {
+      const { data: facs } = await supabase
+        .from('ClinicFacility')
+        .select('*')
+        .order('name');
+      if (facs) {
+        setFacilities(facs);
+        if (facs.length > 0 && !newDoctor.facility_id) {
+          setNewDoctor(prev => ({ ...prev, facility_id: facs[0].id }));
+        }
+      }
+
+      let docsQuery = supabase.from('Doctor').select('*');
+      if (role === 'receptionist' && facilityId) {
+        docsQuery = docsQuery.eq('facility_id', facilityId);
+      }
+      const { data: docs } = await docsQuery;
+      if (docs) setDoctors(docs);
+
+      let booksQuery = supabase
+        .from('Booking')
+        .select('*')
+        .order('booking_date', { ascending: true });
+
+      if (role === 'receptionist' && facilityId) {
+        booksQuery = booksQuery.eq('facility_id', facilityId);
+      }
+      const { data: books } = await booksQuery;
+      if (books) setBookings(books);
+    } catch (e) {
+      console.log('Error fetching data', e);
+    }
+    setLoadingData(false);
   };
 
   useEffect(() => {
@@ -134,47 +171,6 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  const fetchAllData = async (role: 'admin' | 'receptionist', facilityId: string | null) => {
-    setLoadingData(true);
-    try {
-      // 1. جلب المنشآت الطبية
-      const { data: facs } = await supabase
-        .from('ClinicFacility')
-        .select('*')
-        .order('name');
-      if (facs) {
-        setFacilities(facs);
-        if (facs.length > 0 && !newDoctor.facility_id) {
-          setNewDoctor(prev => ({ ...prev, facility_id: facs[0].id }));
-        }
-      }
-
-      // 2. جلب الأطباء (حسب صلاحية المستخدم)
-      let docsQuery = supabase.from('Doctor').select('*');
-      if (role === 'receptionist' && facilityId) {
-        docsQuery = docsQuery.eq('facility_id', facilityId);
-      }
-      const { data: docs } = await docsQuery;
-      if (docs) setDoctors(docs);
-
-      // 3. جلب الحجوزات (معزولة لموظف الاستقبال، وشاملة للمدير العام)
-      let booksQuery = supabase
-        .from('Booking')
-        .select('*')
-        .order('booking_date', { ascending: true });
-
-      if (role === 'receptionist' && facilityId) {
-        booksQuery = booksQuery.eq('facility_id', facilityId);
-      }
-      const { data: books } = await booksQuery;
-      if (books) setBookings(books);
-
-    } catch (e) {
-      console.log('Error fetching admin data', e);
-    }
-    setLoadingData(false);
-  };
-
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthSubmitting(true);
@@ -196,7 +192,6 @@ export default function AdminDashboard() {
     setUser(null);
   };
 
-  // إضافة منشأة طبية جديدة (للمدير العام فقط)
   const handleAddFacility = async (e: React.FormEvent) => {
     e.preventDefault();
     if (userRole !== 'admin') return;
@@ -231,13 +226,12 @@ export default function AdminDashboard() {
         whatsapp_number: '',
         facility_type: 'hospital'
       });
-      alert('تم اعتماد المنشأة الطبية بنجاح وإتاحتها على المنصة.');
+      alert('تم اعتماد المنشأة الطبية بنجاح.');
     } else {
       alert('حدث خطأ أثناء حفظ المنشأة الطبية.');
     }
   };
 
-  // إضافة طبيب جديد
   const handleAddDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDoctor.name || !newDoctor.specialty) return;
@@ -263,7 +257,7 @@ export default function AdminDashboard() {
     if (data && !error) {
       setDoctors([...doctors, data[0]]);
       setNewDoctor(prev => ({ ...prev, name: '', specialty: '', category: 'dental', consultation_fee: 20 }));
-      alert('تمت إضافة الطبيب بنجاح إلى المنظومة.');
+      alert('تمت إضافة الطبيب بنجاح.');
     } else {
       alert('حدث خطأ أثناء حفظ بيانات الطبيب.');
     }
@@ -322,7 +316,6 @@ export default function AdminDashboard() {
     return data.publicUrl;
   };
 
-  // تصفية وترتيب المواعيد
   const filteredBookings = useMemo(() => {
     let result = [...bookings];
 
@@ -351,7 +344,6 @@ export default function AdminDashboard() {
     );
   }
 
-  // شاشة الدخول
   if (!user) {
     return (
       <main className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -496,7 +488,6 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                {/* فلتر المنشآت الطبية للمدير العام */}
                 {!isReceptionist && (
                   <select
                     value={selectedFacilityFilter}
@@ -849,4 +840,153 @@ export default function AdminDashboard() {
                 )}
 
                 <div>
-                  <label className="block text-xs font-bold text-slate
+                  <label className="block text-xs font-bold text-slate-700 mb-1">رسوم المعاينة ($)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newDoctor.consultation_fee}
+                    onChange={(e) => setNewDoctor({ ...newDoctor, consultation_fee: Number(e.target.value) })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm transition mt-2 flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/20"
+                >
+                  <Plus className="w-4 h-4" /> حفظ وإدراج الطبيب
+                </button>
+              </form>
+            </div>
+
+            <div className="lg:col-span-2 space-y-3">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Stethoscope className="w-5 h-5 text-teal-600" />
+                {isReceptionist ? 'كادر أطباء منشأتكم' : 'جميع الأطباء المعتمدين بالمنصة'} ({doctors.length})
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {doctors.map((doc) => {
+                  const fac = facilities.find(f => f.id === doc.facility_id);
+                  return (
+                    <div key={doc.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-[10px] font-bold bg-teal-50 text-teal-700 px-2 py-0.5 rounded-md">
+                            كشف: ${doc.consultation_fee || 20}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteDoctor(doc.id)}
+                            className="text-slate-400 hover:text-rose-600 transition"
+                            title="حذف الطبيب"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <h3 className="font-bold text-slate-900 text-base">{doc.name}</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">{doc.specialty}</p>
+                        {fac && (
+                          <p className="text-[11px] text-teal-800 font-medium mt-1">
+                            🏥 {fac.name} ({fac.city})
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* نافذة تعديل الموعد */}
+      {editingBooking && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
+            <h3 className="font-bold text-slate-900 text-base">إعادة جدولة موعد المريض</h3>
+            <form onSubmit={handleSaveEdit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">التاريخ الجديد</label>
+                <input
+                  type="date"
+                  required
+                  value={editDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الوقت الجديد</label>
+                <select
+                  value={editTime}
+                  onChange={(e) => setEditTime(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl text-xs bg-white outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  {availableTimes.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingBooking(null)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="flex-1 py-2.5 bg-teal-600 text-white rounded-xl text-xs font-bold"
+                >
+                  {savingEdit ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'تأكيد التعديل'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة معاينة الصور السريرية */}
+      {!isReceptionist && previewImages && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-teal-600" /> الصور السريرية المرفقة من المريض
+              </h3>
+              <button 
+                onClick={() => setPreviewImages(null)}
+                className="p-1 text-slate-400 hover:text-slate-800 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {previewImages.map((src, i) => (
+                <div key={i} className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 relative group">
+                  <img 
+                    src={src} 
+                    alt={`حالة سريرية ${i + 1}`} 
+                    className="w-full h-52 object-cover" 
+                  />
+                  <a 
+                    href={src} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="absolute inset-0 bg-black/40 text-white font-bold text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                  >
+                    عرض بالحجم الكامل ↗
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
