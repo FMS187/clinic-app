@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { 
   Plus, Trash2, Calendar, Phone, 
   MapPin, Shield, Lock, Stethoscope, 
   Clock, AlertCircle, Loader2, LogOut, Mail, Settings, CheckCircle2, CreditCard,
-  Image as ImageIcon, X, Edit3, Check
+  Image as ImageIcon, X, Edit3, Check, Search
 } from 'lucide-react';
 
 interface Doctor {
@@ -34,6 +34,9 @@ export default function AdminDashboard() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
+
+  // شريط البحث عن مريض
+  const [searchQuery, setSearchQuery] = useState('');
 
   // نافذة تعديل الموعد
   const [editingBooking, setEditingBooking] = useState<any | null>(null);
@@ -192,12 +195,14 @@ export default function AdminDashboard() {
     setLoadingDoctors(false);
   };
 
+  // جلب المواعيد مرتبة بحسب التاريخ أولاً
   const fetchBookings = async () => {
     setLoadingBookings(true);
     const { data, error } = await supabase
       .from('Booking')
       .select('*')
-      .order('id', { ascending: false });
+      .order('booking_date', { ascending: true })
+      .order('booking_time', { ascending: true });
 
     if (data && !error) setBookings(data);
     setLoadingBookings(false);
@@ -218,7 +223,6 @@ export default function AdminDashboard() {
     setUpdatingStatusId(null);
   };
 
-  // حذف موعد (متاح للملغي، المكتمل، وغير المؤكد)
   const handleDeleteBooking = async (b: any) => {
     const isDeletable = b.status === 'cancelled' || b.status === 'completed' || b.status === 'pending' || !b.status;
     if (!isDeletable && userRole !== 'admin') {
@@ -236,14 +240,12 @@ export default function AdminDashboard() {
     }
   };
 
-  // فتح نافذة التعديل
   const openEditModal = (b: any) => {
     setEditingBooking(b);
     setEditDate(b.booking_date || '');
     setEditTime(b.booking_time || availableTimes[0]);
   };
 
-  // حفظ التعديل
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingBooking || !editDate || !editTime) return;
@@ -306,6 +308,33 @@ export default function AdminDashboard() {
     const { data } = supabase.storage.from('consultations').getPublicUrl(path);
     return data.publicUrl;
   };
+
+  // ترتيب زمني دقيق حسب التاريخ والوقت + البحث الفوري
+  const filteredAndSortedBookings = useMemo(() => {
+    let result = [...bookings];
+
+    // ترتيب تصاعدي: المواعيد الأقرب زمناً تظهر أولاً
+    result.sort((a, b) => {
+      const dateA = a.booking_date || '';
+      const dateB = b.booking_date || '';
+      if (dateA !== dateB) {
+        return dateA.localeCompare(dateB);
+      }
+      return (a.booking_time || '').localeCompare(b.booking_time || '');
+    });
+
+    // تصفية البحث بالاسم أو برقم الهاتف
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((b) => {
+        const nameMatch = (b.patient_name || '').toLowerCase().includes(q);
+        const phoneMatch = (b.patient_phone || '').includes(q);
+        return nameMatch || phoneMatch;
+      });
+    }
+
+    return result;
+  }, [bookings, searchQuery]);
 
   if (loadingAuth) {
     return (
@@ -442,27 +471,55 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* 1. جدول المواعيد */}
+        {/* جدول المواعيد مع البحث والترتيب الزمني */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-600" /> إدارة المواعيد وتأكيد الحضور
-              </h2>
-              <button 
-                onClick={fetchBookings}
-                className="text-xs font-bold text-teal-700 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200 hover:bg-teal-100 transition"
-              >
-                تحديث الجدول
-              </button>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-teal-600" /> إدارة المواعيد وتأكيد الحضور
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">مرتبة تلقائياً حسب أولوية التاريخ والوقت الأقرب</p>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {/* شريط البحث عن مريض بالاسم أو الهاتف */}
+                <div className="relative flex-grow sm:w-64">
+                  <input
+                    type="text"
+                    placeholder="ابحث بالاسم أو رقم الهاتف..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs outline-none focus:border-teal-500 bg-slate-50"
+                  />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <button 
+                  onClick={fetchBookings}
+                  className="text-xs font-bold text-teal-700 bg-teal-50 px-3 py-1.5 rounded-xl border border-teal-200 hover:bg-teal-100 transition whitespace-nowrap"
+                >
+                  تحديث
+                </button>
+              </div>
             </div>
 
             {loadingBookings ? (
               <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin text-teal-600 mx-auto" /></div>
-            ) : bookings.length === 0 ? (
+            ) : filteredAndSortedBookings.length === 0 ? (
               <div className="text-center py-10 space-y-2">
                 <Clock className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-slate-500 text-sm">لا توجد حجوزات مسجلة بعد.</p>
+                <p className="text-slate-500 text-sm">
+                  {searchQuery ? 'لا توجد نتائج تطابق بحثك.' : 'لا توجد حجوزات مسجلة بعد.'}
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -473,7 +530,7 @@ export default function AdminDashboard() {
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الخدمة</th>
                       <th className="p-3">الطبيب والفرع</th>
-                      <th className="p-3">الموعد</th>
+                      <th className="p-3">الموعد والتوقيت</th>
                       {!isReceptionist && <th className="p-3">الصور السريرية</th>}
                       <th className="p-3">حالة الحجز</th>
                       <th className="p-3">إجراءات</th>
@@ -481,7 +538,7 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {bookings.map((b) => {
+                    {filteredAndSortedBookings.map((b) => {
                       let cleanPhone = (b.patient_phone || '').replace(/[^0-9]/g, '');
                       if (cleanPhone.startsWith('967')) cleanPhone = cleanPhone.slice(3);
                       if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
@@ -490,12 +547,11 @@ export default function AdminDashboard() {
                       const currentStatus = b.status || 'pending';
                       const hasPhotos = b.media_keys && Array.isArray(b.media_keys) && b.media_keys.length > 0;
                       
-                      // صلاحية الحذف: للملغي والمكتمل وغير المؤكد
                       const canDelete = currentStatus === 'cancelled' || currentStatus === 'completed' || currentStatus === 'pending';
 
                       const adminReplyMessage = encodeURIComponent(
                         `مرحبا بك أستاذ/ة ${b.patient_name || ''}،\n` +
-                        `نؤكد لك تحديث موعدك في عياداتنا:\n` +
+                        `نؤكد لك استلام وتحديث موعدك في عياداتنا:\n` +
                         `* الفرع: ${b.branch_name}\n` +
                         `* الخدمة: ${b.service_name}\n` +
                         `* الطبيب: ${b.doctor_name}\n` +
@@ -518,7 +574,8 @@ export default function AdminDashboard() {
                             <span className="text-[10px] text-slate-400 block">{b.branch_name}</span>
                           </td>
                           <td className="p-3 text-slate-800 font-mono font-medium whitespace-nowrap">
-                            {b.booking_date} <br/><span className="text-xs text-slate-500">{b.booking_time}</span>
+                            <div className="font-bold text-slate-900">{b.booking_date}</div>
+                            <span className="text-xs text-teal-700 font-sans">{b.booking_time}</span>
                           </td>
 
                           {!isReceptionist && (
@@ -559,7 +616,6 @@ export default function AdminDashboard() {
                             )}
                           </td>
 
-                          {/* أزرار الإجراءات (تعديل وحذف) لموظف الاستقبال والمدير */}
                           <td className="p-3">
                             <div className="flex items-center gap-1.5">
                               <button
