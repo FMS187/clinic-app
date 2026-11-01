@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   Building2, Calendar, Phone, Plus, Trash2, 
   Search, Shield, Lock, Stethoscope, Clock, AlertCircle, 
-  Loader2, LogOut, Mail, Settings, CheckCircle2, Edit3, Check
+  Loader2, LogOut, Mail, Settings, CheckCircle2, Edit3, Check,
+  CreditCard, Wallet, Copy
 } from 'lucide-react';
 
 interface Facility {
@@ -17,6 +18,14 @@ interface Facility {
   phone: string;
   whatsapp_number: string;
   facility_type: string;
+  wallets_info?: {
+    kuraimi?: string;
+    onecash?: string;
+    floosak?: string;
+    jawali?: string;
+    jaib?: string;
+    cash?: string;
+  };
 }
 
 interface Doctor {
@@ -39,7 +48,7 @@ export default function UnifiedHospitalPortal() {
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'bookings' | 'doctors' | 'settings'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'doctors' | 'wallets' | 'settings'>('bookings');
 
   const [facility, setFacility] = useState<Facility | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -47,6 +56,18 @@ export default function UnifiedHospitalPortal() {
   const [loadingData, setLoadingData] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
+
+  // بيانات المحافظ الإلكترونية للمنشأة
+  const [wallets, setWallets] = useState({
+    kuraimi: '',
+    onecash: '',
+    floosak: '',
+    jawali: '',
+    jaib: '',
+    cash: ''
+  });
+  const [savingWallets, setSavingWallets] = useState(false);
+  const [walletsSuccess, setWalletsSuccess] = useState(false);
 
   const [newDoctor, setNewDoctor] = useState({
     name: '',
@@ -89,6 +110,16 @@ export default function UnifiedHospitalPortal() {
           setFacility(facData);
           setFacPhone(facData.whatsapp_number || '');
           setFacAddress(facData.address || '');
+          if (facData.wallets_info) {
+            setWallets({
+              kuraimi: facData.wallets_info.kuraimi || '',
+              onecash: facData.wallets_info.onecash || '',
+              floosak: facData.wallets_info.floosak || '',
+              jawali: facData.wallets_info.jawali || '',
+              jaib: facData.wallets_info.jaib || '',
+              cash: facData.wallets_info.cash || ''
+            });
+          }
         }
 
         const { data: docsData } = await supabase.from('Doctor').select('*').eq('facility_id', facId);
@@ -145,6 +176,26 @@ export default function UnifiedHospitalPortal() {
     await supabase.auth.signOut();
     setUser(null);
     setFacility(null);
+  };
+
+  const handleSaveWallets = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!facility) return;
+    setSavingWallets(true);
+    setWalletsSuccess(false);
+
+    const { error } = await supabase
+      .from('ClinicFacility')
+      .update({ wallets_info: wallets })
+      .eq('id', facility.id);
+
+    if (!error) {
+      setWalletsSuccess(true);
+      setTimeout(() => setWalletsSuccess(false), 3000);
+    } else {
+      alert('حدث خطأ أثناء حفظ المحافظ.');
+    }
+    setSavingWallets(false);
   };
 
   const handleAddDoctor = async (e: React.FormEvent) => {
@@ -235,7 +286,8 @@ export default function UnifiedHospitalPortal() {
       result = result.filter(b => 
         (b.patient_name || '').toLowerCase().includes(q) || 
         (b.patient_phone || '').includes(q) ||
-        (b.doctor_name || '').toLowerCase().includes(q)
+        (b.doctor_name || '').toLowerCase().includes(q) ||
+        (b.transaction_ref || '').includes(q)
       );
     }
     return result;
@@ -334,22 +386,29 @@ export default function UnifiedHospitalPortal() {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 flex-grow sm:flex-grow-0">
+            <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 flex-grow sm:flex-grow-0">
               <button
                 onClick={() => setActiveTab('bookings')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
                   activeTab === 'bookings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                 }`}
               >
                 المواعيد ({bookings.length})
               </button>
 
-              {/* أزرار تظهر لمدير المستشفى فقط */}
               {isManager && (
                 <>
                   <button
+                    onClick={() => setActiveTab('wallets')}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                      activeTab === 'wallets' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
+                    }`}
+                  >
+                    <Wallet className="w-3.5 h-3.5" /> المحافظ الإلكترونية
+                  </button>
+                  <button
                     onClick={() => setActiveTab('doctors')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
                       activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                     }`}
                   >
@@ -357,11 +416,11 @@ export default function UnifiedHospitalPortal() {
                   </button>
                   <button
                     onClick={() => setActiveTab('settings')}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
                       activeTab === 'settings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                     }`}
                   >
-                    إعدادات الاستقبال
+                    الإعدادات
                   </button>
                 </>
               )}
@@ -377,7 +436,7 @@ export default function UnifiedHospitalPortal() {
           </div>
         </header>
 
-        {/* 1. جدول مواعيد المنشأة الموحد */}
+        {/* 1. جدول مواعيد المنشأة */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
@@ -385,13 +444,13 @@ export default function UnifiedHospitalPortal() {
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-teal-600" /> كشف حجوزات المرضى الواردة للمنشأة
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">مرتبة بحسب الأولوية الزمنية الأقرب</p>
+                <p className="text-xs text-slate-400 mt-0.5">متابعة المواعيد وأرقام حوالات السداد عبر المحافظ</p>
               </div>
 
               <div className="relative w-full sm:w-64">
                 <input
                   type="text"
-                  placeholder="ابحث بالاسم أو الهاتف..."
+                  placeholder="بحث باسم، هاتف، أو رقم العملية..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs outline-none focus:border-teal-500 bg-slate-50"
@@ -416,6 +475,7 @@ export default function UnifiedHospitalPortal() {
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الطبيب المطلوب</th>
                       <th className="p-3">الموعد والتوقيت</th>
+                      <th className="p-3">طريقة الدفع وسند العربون</th>
                       <th className="p-3">حالة الحجز</th>
                       <th className="p-3">إجراءات</th>
                       <th className="p-3">واتساب</th>
@@ -446,6 +506,25 @@ export default function UnifiedHospitalPortal() {
                             <div>{b.booking_date}</div>
                             <span className="text-xs text-slate-500">{b.booking_time}</span>
                           </td>
+
+                          {/* عرض طريقة السداد ورقم الحوالة */}
+                          <td className="p-3">
+                            {b.payment_method === 'wallet' ? (
+                              <div>
+                                <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px] block w-fit">
+                                  عربون ({b.payment_wallet || 'محفظة'})
+                                </span>
+                                <span className="font-mono text-xs text-slate-700 font-bold block mt-1">
+                                  رقم السند: {b.transaction_ref || 'لم يدخل'}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 text-xs bg-slate-100 px-2 py-0.5 rounded">
+                                نقداً عند الحضور
+                              </span>
+                            )}
+                          </td>
+
                           <td className="p-3">
                             <select
                               value={b.status || 'pending'}
@@ -500,7 +579,125 @@ export default function UnifiedHospitalPortal() {
           </div>
         )}
 
-        {/* 2. إدارة الأطباء (للمدير) */}
+        {/* 2. تبويب إدارة المحافظ الإلكترونية اليمنية */}
+        {isManager && activeTab === 'wallets' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm max-w-2xl mx-auto space-y-6">
+            <div className="border-b pb-3">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-teal-600" /> إدارة حسابات المحافظ الإلكترونية اليمنية
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                أدخل أرقام الحسابات للمحافظ التي تدعمها المنشأة، وستظهر تلقائياً للمرضى عند الحجز لسداد العربون.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveWallets} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* بنك الكريمي (حاسب / مميز) */}
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-800">
+                    🏦 بنك الكريمي (حاسب / رقم الحساب)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="رقم الحساب أو خدمة حاسب"
+                    value={wallets.kuraimi}
+                    onChange={(e) => setWallets({ ...wallets, kuraimi: e.target.value })}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                  />
+                </div>
+
+                {/* ون كاش OneCash */}
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-800">
+                    🟢 ون كاش (OneCash)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="رقم هاتف المحفظة أو التاجر"
+                    value={wallets.onecash}
+                    onChange={(e) => setWallets({ ...wallets, onecash: e.target.value })}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                  />
+                </div>
+
+                {/* محفظة فلوسك Floosak */}
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-800">
+                    🔵 فلوسك (بنك اليمن والكويت)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="رقم محفظة فلوسك"
+                    value={wallets.floosak}
+                    onChange={(e) => setWallets({ ...wallets, floosak: e.target.value })}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                  />
+                </div>
+
+                {/* محفظة جوالي Jawali */}
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-800">
+                    🟣 جوالي (بنك اليمن والبحرين)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="رقم محفظة جوالي"
+                    value={wallets.jawali}
+                    onChange={(e) => setWallets({ ...wallets, jawali: e.target.value })}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                  />
+                </div>
+
+                {/* محفظة جايبي Jaib */}
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-800">
+                    🟠 جايبي (بنك التضامن)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="رقم محفظة جايبي"
+                    value={wallets.jaib}
+                    onChange={(e) => setWallets({ ...wallets, jaib: e.target.value })}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                  />
+                </div>
+
+                {/* محفظة كاش Cash (سبأفون / يمن موبايل) */}
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-800">
+                    🟡 كاش (Cash) / محفظة أخرى
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="رقم الحساب أو المحفظة"
+                    value={wallets.cash}
+                    onChange={(e) => setWallets({ ...wallets, cash: e.target.value })}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none font-mono"
+                  />
+                </div>
+
+              </div>
+
+              {walletsSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> تم حفظ بيانات المحافظ بنجاح!
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={savingWallets}
+                className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm transition flex items-center justify-center gap-2 shadow-md shadow-teal-600/20"
+              >
+                {savingWallets ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ وتفعيل المحافظ بالمنصة'}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* 3. إدارة الأطباء */}
         {isManager && activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
@@ -597,7 +794,7 @@ export default function UnifiedHospitalPortal() {
           </div>
         )}
 
-        {/* 3. إعدادات رقم الواتساب والعنوان (للمدير) */}
+        {/* 4. إعدادات رقم الواتساب والعنوان */}
         {isManager && activeTab === 'settings' && facility && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm max-w-lg mx-auto space-y-5">
             <div className="border-b pb-3">
