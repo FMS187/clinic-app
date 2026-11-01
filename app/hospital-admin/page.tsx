@@ -29,29 +29,25 @@ interface Doctor {
   city: string;
 }
 
-export default function HospitalAdminPortal() {
+export default function UnifiedHospitalPortal() {
   const [user, setUser] = useState<any>(null);
+  const [isManager, setIsManager] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(true);
 
-  // تسجيل الدخول
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  // التبويب النشط
-  const [activeTab, setActiveTab] = useState<'bookings' | 'doctors' | 'info'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'doctors' | 'settings'>('bookings');
 
-  // بيانات المنشأة الطبية
   const [facility, setFacility] = useState<Facility | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(false);
 
-  // شريط البحث
   const [searchQuery, setSearchQuery] = useState('');
 
-  // نموذج إضافة طبيب جديد
   const [newDoctor, setNewDoctor] = useState({
     name: '',
     specialty: '',
@@ -59,13 +55,11 @@ export default function HospitalAdminPortal() {
     consultation_fee: 20
   });
 
-  // نموذج تعديل بيانات المنشأة
   const [facPhone, setFacPhone] = useState('');
   const [facAddress, setFacAddress] = useState('');
   const [savingFac, setSavingFac] = useState(false);
   const [facSuccess, setFacSuccess] = useState(false);
 
-  // نافذة تعديل الموعد
   const [editingBooking, setEditingBooking] = useState<any | null>(null);
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
@@ -79,47 +73,32 @@ export default function HospitalAdminPortal() {
   const loadFacilityData = async (currentUser: any) => {
     setLoadingData(true);
     try {
+      const role = currentUser.user_metadata?.role;
+      setIsManager(role !== 'receptionist');
+
       let facId = currentUser.user_metadata?.facility_id;
 
       if (!facId) {
-        const { data: firstFac } = await supabase
-          .from('ClinicFacility')
-          .select('*')
-          .limit(1)
-          .single();
+        const { data: firstFac } = await supabase.from('ClinicFacility').select('*').limit(1).single();
         if (firstFac) facId = firstFac.id;
       }
 
       if (facId) {
-        const { data: facData } = await supabase
-          .from('ClinicFacility')
-          .select('*')
-          .eq('id', facId)
-          .single();
-
+        const { data: facData } = await supabase.from('ClinicFacility').select('*').eq('id', facId).single();
         if (facData) {
           setFacility(facData);
           setFacPhone(facData.whatsapp_number || '');
           setFacAddress(facData.address || '');
         }
 
-        const { data: docsData } = await supabase
-          .from('Doctor')
-          .select('*')
-          .eq('facility_id', facId);
-
+        const { data: docsData } = await supabase.from('Doctor').select('*').eq('facility_id', facId);
         if (docsData) setDoctors(docsData);
 
-        const { data: booksData } = await supabase
-          .from('Booking')
-          .select('*')
-          .eq('facility_id', facId)
-          .order('booking_date', { ascending: true });
-
+        const { data: booksData } = await supabase.from('Booking').select('*').eq('facility_id', facId).order('booking_date', { ascending: true });
         if (booksData) setBookings(booksData);
       }
     } catch (e) {
-      console.log('Error loading hospital admin data', e);
+      console.log('Error loading data', e);
     }
     setLoadingData(false);
   };
@@ -155,11 +134,7 @@ export default function HospitalAdminPortal() {
     setAuthSubmitting(true);
     setAuthError('');
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setAuthError('بيانات الدخول غير صحيحة. يرجى التأكد من البريد وكلمة المرور.');
     }
@@ -176,32 +151,27 @@ export default function HospitalAdminPortal() {
     e.preventDefault();
     if (!facility || !newDoctor.name || !newDoctor.specialty) return;
 
-    const { data, error } = await supabase
-      .from('Doctor')
-      .insert([
-        {
-          name: newDoctor.name,
-          specialty: newDoctor.specialty,
-          category: newDoctor.category,
-          facility_id: facility.id,
-          consultation_fee: newDoctor.consultation_fee,
-          city: facility.city,
-          branch: facility.name
-        }
-      ])
-      .select();
+    const { data, error } = await supabase.from('Doctor').insert([
+      {
+        name: newDoctor.name,
+        specialty: newDoctor.specialty,
+        category: newDoctor.category,
+        facility_id: facility.id,
+        consultation_fee: newDoctor.consultation_fee,
+        city: facility.city,
+        branch: facility.name
+      }
+    ]).select();
 
     if (data && !error) {
       setDoctors(prev => [...prev, data[0]]);
       setNewDoctor({ name: '', specialty: '', category: 'dental', consultation_fee: 20 });
-      alert('تمت إضافة الطبيب بنجاح إلى كادر المنشأة.');
-    } else {
-      alert('حدث خطأ أثناء حفظ بيانات الطبيب.');
+      alert('تمت إضافة الطبيب بنجاح.');
     }
   };
 
   const handleDeleteDoctor = async (id: string | number) => {
-    if (!confirm('هل أنت متأكد من رغبتك في حذف هذا الطبيب من كادر المنشأة؟')) return;
+    if (!confirm('هل أنت متأكد من حذف هذا الطبيب من كادر المنشأة؟')) return;
     const { error } = await supabase.from('Doctor').delete().eq('id', id);
     if (!error) {
       setDoctors(prev => prev.filter(d => d.id !== id));
@@ -209,17 +179,21 @@ export default function HospitalAdminPortal() {
   };
 
   const handleUpdateStatus = async (bookingId: string | number, newStatus: string) => {
-    const { error } = await supabase
-      .from('Booking')
-      .update({ status: newStatus })
-      .eq('id', bookingId);
-
+    const { error } = await supabase.from('Booking').update({ status: newStatus }).eq('id', bookingId);
     if (!error) {
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
     }
   };
 
-  const handleSaveFacilityInfo = async (e: React.FormEvent) => {
+  const handleDeleteBooking = async (b: any) => {
+    if (!confirm(`هل أنت متأكد من حذف موعد المريض "${b.patient_name}"؟`)) return;
+    const { error } = await supabase.from('Booking').delete().eq('id', b.id);
+    if (!error) {
+      setBookings(prev => prev.filter(item => item.id !== b.id));
+    }
+  };
+
+  const handleSaveFacilitySettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!facility) return;
     setSavingFac(true);
@@ -228,20 +202,15 @@ export default function HospitalAdminPortal() {
     if (clean.startsWith('967')) clean = clean.slice(3);
     if (clean.startsWith('0')) clean = clean.slice(1);
 
-    const { error } = await supabase
-      .from('ClinicFacility')
-      .update({
-        whatsapp_number: clean,
-        address: facAddress
-      })
-      .eq('id', facility.id);
+    const { error } = await supabase.from('ClinicFacility').update({
+      whatsapp_number: clean,
+      address: facAddress
+    }).eq('id', facility.id);
 
     if (!error) {
       setFacility({ ...facility, whatsapp_number: clean, address: facAddress });
       setFacSuccess(true);
       setTimeout(() => setFacSuccess(false), 3000);
-    } else {
-      alert('حدث خطأ أثناء تحديث بيانات المنشأة.');
     }
     setSavingFac(false);
   };
@@ -251,11 +220,7 @@ export default function HospitalAdminPortal() {
     if (!editingBooking || !editDate || !editTime) return;
 
     setSavingEdit(true);
-    const { error } = await supabase
-      .from('Booking')
-      .update({ booking_date: editDate, booking_time: editTime })
-      .eq('id', editingBooking.id);
-
+    const { error } = await supabase.from('Booking').update({ booking_date: editDate, booking_time: editTime }).eq('id', editingBooking.id);
     if (!error) {
       setBookings(prev => prev.map(b => b.id === editingBooking.id ? { ...b, booking_date: editDate, booking_time: editTime } : b));
       setEditingBooking(null);
@@ -269,7 +234,8 @@ export default function HospitalAdminPortal() {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(b => 
         (b.patient_name || '').toLowerCase().includes(q) || 
-        (b.patient_phone || '').includes(q)
+        (b.patient_phone || '').includes(q) ||
+        (b.doctor_name || '').toLowerCase().includes(q)
       );
     }
     return result;
@@ -290,17 +256,17 @@ export default function HospitalAdminPortal() {
           <div className="w-16 h-16 bg-teal-500/10 text-teal-400 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-teal-500/20">
             <Building2 className="w-8 h-8" />
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">بوابة إدارة المستشفى والمنشأة</h1>
-          <p className="text-slate-400 text-xs sm:text-sm mb-6">تسجيل الدخول للمدير العام ومسؤولي العيادات</p>
+          <h1 className="text-xl font-bold text-white mb-2">بوابة المنشأة الطبية</h1>
+          <p className="text-slate-400 text-xs sm:text-sm mb-6">دخول إدارة المستشفى وموظفي الاستقبال</p>
 
           <form onSubmit={handleSignIn} className="space-y-4 text-right">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">البريد الإلكتروني للمنشأة</label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">البريد الإلكتروني المسجل</label>
               <div className="relative">
                 <input
                   type="email"
                   required
-                  placeholder="hospital@clinic.com"
+                  placeholder="reception@hospital.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full p-3.5 pr-10 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm outline-none focus:border-teal-500 transition"
@@ -335,7 +301,7 @@ export default function HospitalAdminPortal() {
               disabled={authSubmitting}
               className="w-full py-3.5 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold text-sm transition mt-3 flex items-center justify-center gap-2 shadow-lg shadow-teal-600/30"
             >
-              {authSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'دخول لوحة إدارة المنشأة'}
+              {authSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'تسجيل الدخول للمنشأة'}
             </button>
           </form>
         </div>
@@ -347,7 +313,7 @@ export default function HospitalAdminPortal() {
     <main className="min-h-screen bg-slate-100 text-slate-800 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
 
-        {/* ترويسة إدارة المستشفى */}
+        {/* ترويسة المنشأة */}
         <header className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-teal-50 border border-teal-200 rounded-2xl flex items-center justify-center text-teal-700">
@@ -355,15 +321,14 @@ export default function HospitalAdminPortal() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black text-slate-900">
-                  {facility ? facility.name : 'لوحة إدارة المنشأة الطبية'}
-                </h1>
+                <h1 className="text-xl font-black text-slate-900">{facility?.name || 'المنشأة الطبية'}</h1>
                 <span className="text-[10px] font-bold bg-teal-100 text-teal-800 px-2.5 py-0.5 rounded-full">
                   {facility?.city || 'اليمن'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                المدير العام للمنشأة: <strong className="text-slate-700">{user.email}</strong>
+                الدخول كـ: <strong className="text-slate-700">{user.email}</strong>
+                <span className="mr-2 text-teal-700 font-bold">({isManager ? 'مدير المنشأة' : 'موظف استقبال'})</span>
               </p>
             </div>
           </div>
@@ -376,24 +341,30 @@ export default function HospitalAdminPortal() {
                   activeTab === 'bookings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                 }`}
               >
-                مواعيد المنشأة ({bookings.length})
+                المواعيد ({bookings.length})
               </button>
-              <button
-                onClick={() => setActiveTab('doctors')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-                  activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
-                }`}
-              >
-                الأطباء ({doctors.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('info')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-                  activeTab === 'info' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
-                }`}
-              >
-                بيانات الاستقبال
-              </button>
+
+              {/* أزرار تظهر لمدير المستشفى فقط */}
+              {isManager && (
+                <>
+                  <button
+                    onClick={() => setActiveTab('doctors')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                      activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
+                    }`}
+                  >
+                    الأطباء ({doctors.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('settings')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                      activeTab === 'settings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
+                    }`}
+                  >
+                    إعدادات الاستقبال
+                  </button>
+                </>
+              )}
             </div>
 
             <button
@@ -406,21 +377,21 @@ export default function HospitalAdminPortal() {
           </div>
         </header>
 
-        {/* 1. جدول مواعيد المستشفى فقط */}
+        {/* 1. جدول مواعيد المنشأة الموحد */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-teal-600" /> كشف حجوزات المرضى الواردة لمنشأتكم
+                  <Calendar className="w-5 h-5 text-teal-600" /> كشف حجوزات المرضى الواردة للمنشأة
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">الحجوزات المحولة لمنشأتكم عبر المنصة الوسيطة</p>
+                <p className="text-xs text-slate-400 mt-0.5">مرتبة بحسب الأولوية الزمنية الأقرب</p>
               </div>
 
               <div className="relative w-full sm:w-64">
                 <input
                   type="text"
-                  placeholder="بحث باسم المريض أو الهاتف..."
+                  placeholder="ابحث بالاسم أو الهاتف..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs outline-none focus:border-teal-500 bg-slate-50"
@@ -446,8 +417,8 @@ export default function HospitalAdminPortal() {
                       <th className="p-3">الطبيب المطلوب</th>
                       <th className="p-3">الموعد والتوقيت</th>
                       <th className="p-3">حالة الحجز</th>
-                      <th className="p-3">تعديل</th>
-                      <th className="p-3">واتساب المريض</th>
+                      <th className="p-3">إجراءات</th>
+                      <th className="p-3">واتساب</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -459,7 +430,7 @@ export default function HospitalAdminPortal() {
 
                       const replyMsg = encodeURIComponent(
                         `مرحباً بك أستاذ/ة ${b.patient_name || ''}،\n` +
-                        `نؤكد لك استلام وتثبيت موعدك لدى ${facility?.name || 'المنشأة'}:\n` +
+                        `نؤكد لك استلام وتثبيت موعدك لدى ${facility?.name}:\n` +
                         `* الطبيب: ${b.doctor_name}\n` +
                         `* الموعد: ${b.booking_date} الساعة ${b.booking_time}\n\n` +
                         `أهلاً وسهلاً بك!`
@@ -484,31 +455,39 @@ export default function HospitalAdminPortal() {
                               <option value="pending">⏳ قيد الانتظار</option>
                               <option value="confirmed">✅ مؤكد</option>
                               <option value="completed">🩺 تم الكشف</option>
-                              <option value="cancelled">❌ معتذر/ملغي</option>
+                              <option value="cancelled">❌ ملغي</option>
                             </select>
                           </td>
                           <td className="p-3">
-                            <button
-                              onClick={() => {
-                                setEditingBooking(b);
-                                setEditDate(b.booking_date || '');
-                                setEditTime(b.booking_time || availableTimes[0]);
-                              }}
-                              className="p-1.5 text-teal-700 hover:bg-teal-50 border border-teal-200 rounded-lg"
-                              title="تعديل الموعد"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingBooking(b);
+                                  setEditDate(b.booking_date || '');
+                                  setEditTime(b.booking_time || availableTimes[0]);
+                                }}
+                                className="p-1.5 text-teal-700 hover:bg-teal-50 border border-teal-200 rounded-lg"
+                                title="تعديل الموعد"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBooking(b)}
+                                className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg"
+                                title="حذف"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                           <td className="p-3">
                             <a
                               href={waLink}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg border border-emerald-200 text-xs font-bold transition"
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg border border-emerald-200 text-xs font-bold transition whitespace-nowrap"
                             >
-                              <Phone className="w-3.5 h-3.5" />
-                              واتساب
+                              <Phone className="w-3.5 h-3.5" /> واتساب
                             </a>
                           </td>
                         </tr>
@@ -521,12 +500,12 @@ export default function HospitalAdminPortal() {
           </div>
         )}
 
-        {/* 2. إدارة كادر أطباء المستشفى */}
-        {activeTab === 'doctors' && (
+        {/* 2. إدارة الأطباء (للمدير) */}
+        {isManager && activeTab === 'doctors' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
-                <Plus className="w-5 h-5 text-teal-600" /> إضافة طبيب للمنشأة
+                <Plus className="w-5 h-5 text-teal-600" /> إضافة طبيب لمنشأتكم
               </h2>
               <form onSubmit={handleAddDoctor} className="space-y-3">
                 <div>
@@ -546,7 +525,7 @@ export default function HospitalAdminPortal() {
                   <input
                     type="text"
                     required
-                    placeholder="مثال: استشاري أمراض القلب والقسطرة"
+                    placeholder="مثال: استشاري أمراض القلب"
                     value={newDoctor.specialty}
                     onChange={(e) => setNewDoctor({ ...newDoctor, specialty: e.target.value })}
                     className="w-full p-2.5 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-teal-500"
@@ -568,13 +547,13 @@ export default function HospitalAdminPortal() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">رسوم الكشف التقديرية ($)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">رسوم الكشف ($)</label>
                   <input
                     type="number"
                     min="1"
                     value={newDoctor.consultation_fee}
                     onChange={(e) => setNewDoctor({ ...newDoctor, consultation_fee: Number(e.target.value) })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-sm outline-none font-mono"
                   />
                 </div>
 
@@ -582,14 +561,14 @@ export default function HospitalAdminPortal() {
                   type="submit"
                   className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm transition mt-2 flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/20"
                 >
-                  <Plus className="w-4 h-4" /> حفظ وإدراج الطبيب بالمنصة
+                  <Plus className="w-4 h-4" /> حفظ وإدراج الطبيب
                 </button>
               </form>
             </div>
 
             <div className="lg:col-span-2 space-y-3">
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Stethoscope className="w-5 h-5 text-teal-600" /> كادر الأطباء التابع لمنشأتكم ({doctors.length})
+                <Stethoscope className="w-5 h-5 text-teal-600" /> كادر الأطباء التابع للمنشأة ({doctors.length})
               </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -603,17 +582,13 @@ export default function HospitalAdminPortal() {
                         <button
                           onClick={() => handleDeleteDoctor(doc.id)}
                           className="text-slate-400 hover:text-rose-600 transition"
-                          title="حذف الطبيب"
+                          title="حذف"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                       <h3 className="font-bold text-slate-900 text-base">{doc.name}</h3>
                       <p className="text-xs text-slate-500 mt-1">{doc.specialty}</p>
-                    </div>
-
-                    <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] text-teal-700 font-medium">
-                      متاح للحجز عبر التطبيق
                     </div>
                   </div>
                 ))}
@@ -622,17 +597,17 @@ export default function HospitalAdminPortal() {
           </div>
         )}
 
-        {/* 3. إعدادات بيانات الاستقبال ورقم الواتساب */}
-        {activeTab === 'info' && facility && (
+        {/* 3. إعدادات رقم الواتساب والعنوان (للمدير) */}
+        {isManager && activeTab === 'settings' && facility && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm max-w-lg mx-auto space-y-5">
             <div className="border-b pb-3">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <Settings className="w-5 h-5 text-teal-600" /> إعدادات استقبال المواعيد
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">تحديث رقم الواتساب الذي يستقبل رسائل تذاكر الحجز من المرضى</p>
+              <p className="text-xs text-slate-400 mt-0.5">تحديث رقم الواتساب الذي يستقبل تذاكر الحجز من المرضى</p>
             </div>
 
-            <form onSubmit={handleSaveFacilityInfo} className="space-y-4">
+            <form onSubmit={handleSaveFacilitySettings} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">اسم المنشأة المسجل</label>
                 <input
@@ -661,7 +636,7 @@ export default function HospitalAdminPortal() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">عنوان وتفاصيل موقع المستشفى</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">العنوان والموقع</label>
                 <textarea
                   rows={2}
                   value={facAddress}
