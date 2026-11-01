@@ -6,7 +6,7 @@ import {
   Plus, Trash2, Calendar, Phone, 
   MapPin, Shield, Lock, Stethoscope, 
   Clock, AlertCircle, Loader2, LogOut, Mail, Settings, CheckCircle2, CreditCard,
-  Image as ImageIcon, X
+  Image as ImageIcon, X, Edit3, Check
 } from 'lucide-react';
 
 interface Doctor {
@@ -35,7 +35,13 @@ export default function AdminDashboard() {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | number | null>(null);
 
-  // نافذة معاينة الصور السريرية (خاصة بالمسؤول فقط)
+  // نافذة تعديل الموعد
+  const [editingBooking, setEditingBooking] = useState<any | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editTime, setEditTime] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // نافذة معاينة الصور السريرية (للمسؤول فقط)
   const [previewImages, setPreviewImages] = useState<string[] | null>(null);
 
   const [clinicPhone, setClinicPhone] = useState('');
@@ -49,6 +55,11 @@ export default function AdminDashboard() {
     category: 'dental' as 'dental' | 'derma',
     branch: 'صنعاء - فرع حدة'
   });
+
+  const availableTimes = [
+    '09:30 صباحاً', '10:30 صباحاً', '11:30 صباحاً',
+    '04:30 عصراً', '05:30 مساءً', '06:30 مساءً', '07:30 مساءً'
+  ];
 
   const extractRole = (sessionUser: any): 'admin' | 'receptionist' => {
     if (!sessionUser) return 'admin';
@@ -207,6 +218,55 @@ export default function AdminDashboard() {
     setUpdatingStatusId(null);
   };
 
+  // حذف موعد (متاح للملغي، المكتمل، وغير المؤكد)
+  const handleDeleteBooking = async (b: any) => {
+    const isDeletable = b.status === 'cancelled' || b.status === 'completed' || b.status === 'pending' || !b.status;
+    if (!isDeletable && userRole !== 'admin') {
+      alert('لا يمكن حذف المواعيد المؤكدة إلا بعد تغيير حالتها أولاً.');
+      return;
+    }
+
+    if (!confirm(`هل أنت متأكد من حذف موعد المريض "${b.patient_name}"؟`)) return;
+
+    const { error } = await supabase.from('Booking').delete().eq('id', b.id);
+    if (!error) {
+      setBookings(prev => prev.filter(item => item.id !== b.id));
+    } else {
+      alert('حدث خطأ أثناء محاولة الحذف.');
+    }
+  };
+
+  // فتح نافذة التعديل
+  const openEditModal = (b: any) => {
+    setEditingBooking(b);
+    setEditDate(b.booking_date || '');
+    setEditTime(b.booking_time || availableTimes[0]);
+  };
+
+  // حفظ التعديل
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBooking || !editDate || !editTime) return;
+
+    setSavingEdit(true);
+
+    const { error } = await supabase
+      .from('Booking')
+      .update({
+        booking_date: editDate,
+        booking_time: editTime
+      })
+      .eq('id', editingBooking.id);
+
+    if (!error) {
+      setBookings(prev => prev.map(b => b.id === editingBooking.id ? { ...b, booking_date: editDate, booking_time: editTime } : b));
+      setEditingBooking(null);
+    } else {
+      alert('تعذر تعديل الموعد، يرجى التحقق من الاتصال.');
+    }
+    setSavingEdit(false);
+  };
+
   const handleAddDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (userRole !== 'admin') return;
@@ -350,7 +410,6 @@ export default function AdminDashboard() {
                 جدول المواعيد ({bookings.length})
               </button>
 
-              {/* إخفاء تبويبي الأطباء والإعدادات عن موظف الاستقبال */}
               {!isReceptionist && (
                 <>
                   <button
@@ -383,7 +442,7 @@ export default function AdminDashboard() {
           </div>
         </header>
 
-        {/* 1. جدول المواعيد والحالات */}
+        {/* 1. جدول المواعيد */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -415,9 +474,9 @@ export default function AdminDashboard() {
                       <th className="p-3">الخدمة</th>
                       <th className="p-3">الطبيب والفرع</th>
                       <th className="p-3">الموعد</th>
-                      {/* إخفاء رأس عمود الصور عن موظف الاستقبال */}
                       {!isReceptionist && <th className="p-3">الصور السريرية</th>}
                       <th className="p-3">حالة الحجز</th>
+                      <th className="p-3">إجراءات</th>
                       <th className="p-3">تواصل</th>
                     </tr>
                   </thead>
@@ -430,10 +489,13 @@ export default function AdminDashboard() {
 
                       const currentStatus = b.status || 'pending';
                       const hasPhotos = b.media_keys && Array.isArray(b.media_keys) && b.media_keys.length > 0;
+                      
+                      // صلاحية الحذف: للملغي والمكتمل وغير المؤكد
+                      const canDelete = currentStatus === 'cancelled' || currentStatus === 'completed' || currentStatus === 'pending';
 
                       const adminReplyMessage = encodeURIComponent(
                         `مرحبا بك أستاذ/ة ${b.patient_name || ''}،\n` +
-                        `نؤكد استلام موعدك في عياداتنا:\n` +
+                        `نؤكد لك تحديث موعدك في عياداتنا:\n` +
                         `* الفرع: ${b.branch_name}\n` +
                         `* الخدمة: ${b.service_name}\n` +
                         `* الطبيب: ${b.doctor_name}\n` +
@@ -459,7 +521,6 @@ export default function AdminDashboard() {
                             {b.booking_date} <br/><span className="text-xs text-slate-500">{b.booking_time}</span>
                           </td>
 
-                          {/* عرض زر الصور السريرية للمسؤول (Admin) فقط وحجبه عن موظف الاستقبال */}
                           {!isReceptionist && (
                             <td className="p-3">
                               {hasPhotos ? (
@@ -497,6 +558,30 @@ export default function AdminDashboard() {
                               </select>
                             )}
                           </td>
+
+                          {/* أزرار الإجراءات (تعديل وحذف) لموظف الاستقبال والمدير */}
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => openEditModal(b)}
+                                className="p-1.5 text-teal-700 hover:bg-teal-50 border border-teal-200 rounded-lg transition"
+                                title="تعديل الموعد والتوقيت"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
+                              {canDelete && (
+                                <button
+                                  onClick={() => handleDeleteBooking(b)}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg transition"
+                                  title="حذف الموعد نهائياً"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
                           <td className="p-3">
                             <a
                               href={patientWaLink}
@@ -693,7 +778,75 @@ export default function AdminDashboard() {
 
       </div>
 
-      {/* نافذة معاينة الصور السريرية المنبثقة (تظهر للمسؤول فقط) */}
+      {/* نافذة تعديل تاريخ ووقت الموعد */}
+      {editingBooking && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-teal-600" /> تعديل تواريخ الحجز
+              </h3>
+              <button 
+                onClick={() => setEditingBooking(null)}
+                className="p-1 text-slate-400 hover:text-slate-800 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              المريض: <strong className="text-slate-800">{editingBooking.patient_name}</strong> | الطبيب: <strong className="text-teal-700">{editingBooking.doctor_name}</strong>
+            </p>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">التاريخ الجديد</label>
+                <input
+                  type="date"
+                  required
+                  value={editDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">الوقت المتاح</label>
+                <select
+                  value={editTime}
+                  onChange={(e) => setEditTime(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-xl text-sm outline-none bg-white focus:ring-2 focus:ring-teal-500"
+                >
+                  {availableTimes.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingBooking(null)}
+                  className="flex-1 py-3 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-xs"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-teal-600/20"
+                >
+                  {savingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  حفظ التعديل
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة معاينة الصور السريرية المنبثقة (للمسؤول فقط) */}
       {!isReceptionist && previewImages && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
