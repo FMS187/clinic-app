@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   Search, MapPin, Stethoscope, Building2, Calendar, 
   Clock, PhoneCall, CheckCircle, ChevronLeft, ShieldCheck, 
-  Loader2, Filter, Sparkles, Smile, Eye, HeartPulse, User,
-  Wallet, Copy, CreditCard, Gift, ExternalLink
+  Loader2, Sparkles, Smile, Eye, HeartPulse,
+  Wallet, Copy, Gift
 } from 'lucide-react';
 
 interface Facility {
@@ -37,6 +37,14 @@ interface Doctor {
   city: string;
 }
 
+interface BookingRecord {
+  id: string | number;
+  doctor_name: string;
+  booking_date: string;
+  booking_time: string;
+  status: string;
+}
+
 const SPECIALTIES = [
   { id: 'all', name: 'جميع التخصصات', icon: Stethoscope },
   { id: 'dental', name: 'طب وجراحة الأسنان', icon: Smile },
@@ -50,6 +58,7 @@ const CITIES = ['الكل', 'صنعاء', 'عدن', 'تعز', 'حضرموت'];
 export default function MedicalMarketplace() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   // الفلاتر
@@ -62,31 +71,10 @@ export default function MedicalMarketplace() {
   const [bookingFacility, setBookingFacility] = useState<Facility | null>(null);
 
   // نموذج الحجز
-  <div>
-  <label className="block text-xs font-bold text-slate-700 mb-1">الوقت المتاح</label>
-  <select
-    value={bookingTime}
-    onChange={(e) => setBookingTime(e.target.value)}
-    className="w-full p-2 border border-slate-300 rounded-xl text-xs outline-none bg-white font-bold"
-  >
-    {availableSlots.map(slot => {
-      // فحص هل هذا الوقت محجوز مسبقاً لنفس الطبيب والتاريخ وغير ملغي
-      const isTaken = bookings.some(b => 
-        b.doctor_name === bookingDoctor?.name && 
-        b.booking_date === bookingDate && 
-        b.booking_time === slot &&
-        b.status !== 'cancelled'
-      );
-
-      return (
-        <option key={slot} value={slot} disabled={isTaken} className={isTaken ? 'text-slate-300 bg-slate-100' : 'text-slate-800'}>
-          {slot} {isTaken ? '(محجوز مسبقاً ❌)' : '✅'}
-        </option>
-      );
-    })}
-  </select>
-</div>
-
+  const [patientName, setPatientName] = useState('');
+  const [patientPhone, setPatientPhone] = useState('');
+  const [bookingDate, setBookingDate] = useState('');
+  const [bookingTime, setBookingTime] = useState('10:00 صباحاً');
 
   // خيارات السداد
   const [paymentType, setPaymentType] = useState<'cash' | 'wallet'>('cash');
@@ -112,8 +100,11 @@ export default function MedicalMarketplace() {
     try {
       const { data: facs } = await supabase.from('ClinicFacility').select('*').eq('is_active', true);
       const { data: docs } = await supabase.from('Doctor').select('*');
+      const { data: books } = await supabase.from('Booking').select('id, doctor_name, booking_date, booking_time, status');
+      
       if (facs) setFacilities(facs);
       if (docs) setDoctors(docs);
+      if (books) setBookings(books);
     } catch (e) {
       console.log('Error fetching aggregator data', e);
     }
@@ -150,6 +141,7 @@ export default function MedicalMarketplace() {
     setBookingDoctor(doc);
     setBookingFacility(fac);
     setBookingDate(new Date().toISOString().split('T')[0]);
+    setBookingTime('09:30 صباحاً');
     setPaymentType('cash');
     setTransactionRef('');
     setBookingSuccess(null);
@@ -211,6 +203,15 @@ export default function MedicalMarketplace() {
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://clinic-app-silk-phi.vercel.app';
       const verifyUrl = `${origin}/verify?id=${insertedBooking.id}`;
 
+      // إضافة الموعد الجديد للذاكرة المحلية ليحجب الوقت فوراً
+      setBookings(prev => [...prev, {
+        id: insertedBooking.id,
+        doctor_name: bookingDoctor.name,
+        booking_date: bookingDate,
+        booking_time: bookingTime,
+        status: 'pending'
+      }]);
+
       setBookingSuccess({
         id: insertedBooking.id,
         bookingCode,
@@ -228,7 +229,7 @@ export default function MedicalMarketplace() {
         verifyUrl
       });
     } else {
-      alert(`خطأ في الحجز: ${error?.message || JSON.stringify(error)}`);
+      alert(`خطأ في الحجز: ${error?.message || 'يرجى المحاولة مرة أخرى'}`);
     }
   };
 
@@ -375,7 +376,7 @@ export default function MedicalMarketplace() {
         )}
       </section>
 
-      {/* 4. نافذة منبثقة للحجز مع خيارات السداد وتوليد كود التوثيق */}
+      {/* 4. نافذة منبثقة للحجز مع حجب التوقيتات المحجوزة */}
       {bookingDoctor && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto text-right">
@@ -403,7 +404,7 @@ export default function MedicalMarketplace() {
                     <input 
                       type="text"
                       required
-                      placeholder="مثال: أحمد عبد الله المحمدي"
+                      placeholder="مثال: صالح علي سالم"
                       value={patientName}
                       onChange={(e) => setPatientName(e.target.value)}
                       className="w-full p-2.5 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-teal-500"
@@ -440,13 +441,26 @@ export default function MedicalMarketplace() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">الوقت المفضل</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">الوقت المتاح</label>
                       <select
                         value={bookingTime}
                         onChange={(e) => setBookingTime(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-xl text-xs outline-none bg-white"
+                        className="w-full p-2 border border-slate-300 rounded-xl text-xs outline-none bg-white font-bold"
                       >
-                        {availableSlots.map(slot => <option key={slot} value={slot}>{slot}</option>)}
+                        {availableSlots.map(slot => {
+                          const isTaken = bookings.some(b => 
+                            b.doctor_name === bookingDoctor?.name && 
+                            b.booking_date === bookingDate && 
+                            b.booking_time === slot &&
+                            b.status !== 'cancelled'
+                          );
+
+                          return (
+                            <option key={slot} value={slot} disabled={isTaken} className={isTaken ? 'text-slate-300 bg-slate-100' : 'text-slate-800'}>
+                              {slot} {isTaken ? '(محجوز مسبقاً ❌)' : '✅'}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   </div>
@@ -485,7 +499,6 @@ export default function MedicalMarketplace() {
                       </button>
                     </div>
 
-                    {/* تفاصيل السداد عبر المحافظ */}
                     {paymentType === 'wallet' && (
                       <div className="p-3.5 bg-teal-50/50 border border-teal-200 rounded-2xl space-y-3 mt-2 text-xs">
                         <div>
@@ -551,7 +564,6 @@ export default function MedicalMarketplace() {
                 </form>
               </>
             ) : (
-              /* شاشة إتمام الحجز مع بطاقة رابط التحقق والخصم */
               <div className="text-center py-2 space-y-4">
                 <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
                   <CheckCircle className="w-8 h-8" />
@@ -586,7 +598,7 @@ export default function MedicalMarketplace() {
                   </div>
                 </div>
 
-                {/* بطاقة الحافز ورابط التوثيق للحصول على الخصم */}
+                {/* بطاقة رابط التوثيق للخصم */}
                 <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl text-right space-y-2 shadow-sm">
                   <div className="flex items-center gap-1.5 text-teal-900 font-bold text-xs">
                     <Gift className="w-4 h-4 text-teal-700 flex-shrink-0" />
@@ -617,7 +629,7 @@ export default function MedicalMarketplace() {
                 {(() => {
                   let fNum = (bookingSuccess.facilityPhone || '770000000').replace(/[^0-9]/g, '');
                   if (fNum.startsWith('967')) fNum = fNum.slice(3);
-                  if (fNum.startsWith('0')) cleanPhone = fNum.slice(1);
+                  if (fNum.startsWith('0')) fNum = fNum.slice(1);
                   const targetWa = '967' + fNum;
 
                   const payInfo = bookingSuccess.paymentType === 'wallet' 
