@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { CheckCircle2, HeartPulse, Loader2, Star, Gift, Copy, Check, Sparkles } from 'lucide-react';
+import { CheckCircle2, HeartPulse, Loader2, Star, Gift, Copy, Check, AlertCircle } from 'lucide-react';
 
 function PatientVerifyContent() {
   const searchParams = useSearchParams();
@@ -13,29 +13,52 @@ function PatientVerifyContent() {
   const [confirmed, setConfirmed] = useState(false);
   const [rating, setRating] = useState(5);
   const [copiedCoupon, setCopiedCoupon] = useState(false);
-
-  // رمز الكوبون المخصص للمريض
-  const couponCode = `CARE-${Math.floor(1000 + Math.random() * 9000)}`;
+  const [couponCode, setCouponCode] = useState<string>('');
+  const [isCouponUsed, setIsCouponUsed] = useState(false);
 
   useEffect(() => {
     if (bookingId) {
-      handleVerify();
+      handleVerifyAndLoadCoupon();
     } else {
       setLoading(false);
     }
   }, [bookingId]);
 
-  const handleVerify = async () => {
+  const handleVerifyAndLoadCoupon = async () => {
     try {
-      const { error } = await supabase
+      // 1. جلب بيانات الحجز للتحقق من وجود كود سابق أو استخدامه
+      const { data: bookingData } = await supabase
         .from('Booking')
-        .update({ 
-          status: 'completed',
-          verified_by_patient: true 
-        })
-        .eq('id', bookingId);
+        .select('id, discount_coupon, is_coupon_used, status, verified_by_patient')
+        .eq('id', bookingId)
+        .single();
 
-      if (!error) {
+      if (bookingData) {
+        let activeCoupon = bookingData.discount_coupon;
+
+        // إذا لم يكن لديه كود سابق، يتم توليده لمرة واحدة فقط وحفظه بقاعدة البيانات
+        if (!activeCoupon) {
+          activeCoupon = `CARE-${Math.floor(1000 + Math.random() * 9000)}`;
+          await supabase
+            .from('Booking')
+            .update({
+              status: 'completed',
+              verified_by_patient: true,
+              discount_coupon: activeCoupon
+            })
+            .eq('id', bookingId);
+        } else if (!bookingData.verified_by_patient) {
+          await supabase
+            .from('Booking')
+            .update({
+              status: 'completed',
+              verified_by_patient: true
+            })
+            .eq('id', bookingId);
+        }
+
+        setCouponCode(activeCoupon);
+        setIsCouponUsed(bookingData.is_coupon_used || false);
         setConfirmed(true);
       }
     } catch (e) {
@@ -45,6 +68,7 @@ function PatientVerifyContent() {
   };
 
   const copyCoupon = () => {
+    if (!couponCode) return;
     navigator.clipboard.writeText(couponCode);
     setCopiedCoupon(true);
     setTimeout(() => setCopiedCoupon(false), 2500);
@@ -59,7 +83,7 @@ function PatientVerifyContent() {
       {loading ? (
         <div className="space-y-2">
           <Loader2 className="w-6 h-6 animate-spin text-teal-400 mx-auto" />
-          <p className="text-xs text-slate-400">جاري توثيق زيارتك الطبية وتجهيز هديتك...</p>
+          <p className="text-xs text-slate-400">جاري مطابقة زيارتك الطبية والتحقق من الكوبون...</p>
         </div>
       ) : confirmed ? (
         <div className="space-y-4">
@@ -68,35 +92,47 @@ function PatientVerifyContent() {
           </div>
           <h1 className="text-xl font-black">حمداً لله على سلامتك!</h1>
           <p className="text-xs text-slate-300 leading-relaxed">
-            شكراً لتوثيق حضورك الطبي. تقديراً لثقتك بالمنصة، نقدم لك مكافأة خصم خاصة لزيارتك القادمة.
+            شكراً لتوثيق حضورك الطبي عبر المنصة.
           </p>
 
-          {/* بطاقة الخصم والهدية المباشرة */}
-          <div className="p-4 bg-gradient-to-br from-teal-900/60 to-slate-900 border border-teal-500/40 rounded-2xl space-y-2 text-right relative overflow-hidden shadow-inner">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-teal-300 flex items-center gap-1">
-                <Gift className="w-4 h-4 text-teal-400" /> كود خصم 15% للموعد القادم
-              </span>
-              <span className="text-[10px] bg-teal-500/20 text-teal-300 px-2 py-0.5 rounded font-mono">
-                صالح لمدة شهر
-              </span>
+          {/* فحص ما إذا كان الكوبون مستخدماً مسبقاً أم متاحاً */}
+          {isCouponUsed ? (
+            <div className="p-4 bg-slate-900 border border-slate-700 rounded-2xl text-right space-y-1.5">
+              <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>تم استخدام كوبون الخصم الخاص بهذه الزيارة مسبقاً</span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                لقد تم الاستفادة من كود الخصم المرتبط بهذا الحجز في موعد سابق. نتمنى لك دوام الصحة والعافية!
+              </p>
             </div>
+          ) : (
+            <div className="p-4 bg-gradient-to-br from-teal-900/60 to-slate-900 border border-teal-500/40 rounded-2xl space-y-2 text-right relative overflow-hidden shadow-inner">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-teal-300 flex items-center gap-1">
+                  <Gift className="w-4 h-4 text-teal-400" /> كود خصم 15% للموعد القادم
+                </span>
+                <span className="text-[10px] bg-teal-500/20 text-teal-300 px-2 py-0.5 rounded font-mono">
+                  صالح للاستخدام مرة واحدة
+                </span>
+              </div>
 
-            <div className="bg-slate-950 p-2.5 rounded-xl border border-teal-500/30 flex items-center justify-between mt-2">
-              <span className="font-mono font-black text-amber-400 tracking-wider text-sm">{couponCode}</span>
-              <button
-                type="button"
-                onClick={copyCoupon}
-                className="px-3 py-1 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-1"
-              >
-                {copiedCoupon ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                {copiedCoupon ? 'تم النسخ!' : 'نسخ الكود'}
-              </button>
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-teal-500/30 flex items-center justify-between mt-2">
+                <span className="font-mono font-black text-amber-400 tracking-wider text-sm">{couponCode}</span>
+                <button
+                  type="button"
+                  onClick={copyCoupon}
+                  className="px-3 py-1 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-1"
+                >
+                  {copiedCoupon ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedCoupon ? 'تم النسخ!' : 'نسخ الكود'}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 text-center pt-1">
+                الكود ثابت ومربوط برقم ملفك؛ أظهره للاستقبال أو استخدمه في حجزك القادم.
+              </p>
             </div>
-            <p className="text-[10px] text-slate-400 text-center pt-1">
-              أظهر هذا الكود لموظف الاستقبال أو أرفقه عند حجز موعدك القادم عبر المنصة.
-            </p>
-          </div>
+          )}
 
           {/* تقييم العيادة */}
           <div className="pt-2 border-t border-slate-700/60">
