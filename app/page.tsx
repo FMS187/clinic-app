@@ -6,7 +6,7 @@ import {
   Search, MapPin, Stethoscope, Building2, Calendar, 
   Clock, PhoneCall, CheckCircle, ChevronLeft, ShieldCheck, 
   Loader2, Sparkles, Smile, Eye, HeartPulse,
-  Wallet, Copy, Gift, Tag, Check, AlertCircle
+  Wallet, Copy, Gift, Tag, Check, AlertCircle, KeyRound
 } from 'lucide-react';
 
 interface Facility {
@@ -158,7 +158,6 @@ export default function MedicalMarketplace() {
     setBookingSuccess(null);
   };
 
-  // التحقق من كود الخصم في قاعدة البيانات
   const handleVerifyCoupon = async () => {
     if (!couponInput.trim()) return;
     setVerifyingCoupon(true);
@@ -181,9 +180,8 @@ export default function MedicalMarketplace() {
         setAppliedCouponCode('');
         setDiscountAmount(0);
       } else {
-        // احتساب خصم 15% (أو خصم ثابت $1 من عمولة المنصة)
         const fee = bookingDoctor?.consultation_fee || 20;
-        const discount = Math.min(fee * 0.15, 2.0); // خصم 15% بحد أقصى يعادل عمولة المنصة
+        const discount = Math.min(fee * 0.15, 2.0);
         setAppliedCouponCode(cleanCode);
         setDiscountAmount(Number(discount.toFixed(2)));
         setCouponStatusMsg({ type: 'success', text: `تم تفعيل الخصم بنجاح! تم توفير $${discount.toFixed(2)}` });
@@ -222,6 +220,7 @@ export default function MedicalMarketplace() {
     if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
 
     const bookingCode = `YE-${Math.floor(10000 + Math.random() * 90000)}`;
+    const checkinPin = `${Math.floor(1000 + Math.random() * 9000)}`; // رمز تأكيد الحضور من 4 أرقام
     const originalFee = bookingDoctor.consultation_fee || 20;
     const finalFee = Math.max(0, originalFee - discountAmount);
 
@@ -243,7 +242,8 @@ export default function MedicalMarketplace() {
         payment_wallet: paymentType === 'wallet' ? selectedWallet : null,
         transaction_ref: paymentType === 'wallet' ? transactionRef : null,
         applied_coupon: appliedCouponCode || null,
-        discount_amount: discountAmount
+        discount_amount: discountAmount,
+        checkin_pin: checkinPin
       }
     ]).select();
 
@@ -265,6 +265,7 @@ export default function MedicalMarketplace() {
       setBookingSuccess({
         id: insertedBooking.id,
         bookingCode,
+        checkinPin,
         patientName,
         patientPhone: cleanPhone,
         doctorName: bookingDoctor.name,
@@ -297,7 +298,6 @@ export default function MedicalMarketplace() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800 pb-16">
-      {/* 1. الترويسة */}
       <header className="bg-gradient-to-r from-teal-700 via-teal-800 to-slate-900 text-white pt-10 pb-16 px-4 sm:px-8">
         <div className="max-w-5xl mx-auto text-center space-y-4">
           <div className="inline-flex items-center gap-2 bg-teal-600/30 border border-teal-400/30 px-3.5 py-1.5 rounded-full text-xs font-semibold text-teal-200">
@@ -338,7 +338,6 @@ export default function MedicalMarketplace() {
         </div>
       </header>
 
-      {/* 2. شريط التخصصات */}
       <section className="max-w-5xl mx-auto px-4 -mt-8">
         <div className="bg-white p-3 rounded-2xl shadow-md border border-slate-200 overflow-x-auto flex gap-2">
           {SPECIALTIES.map(s => {
@@ -362,7 +361,6 @@ export default function MedicalMarketplace() {
         </div>
       </section>
 
-      {/* 3. قائمة الأطباء */}
       <section className="max-w-5xl mx-auto px-4 mt-8 space-y-4">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
@@ -429,7 +427,7 @@ export default function MedicalMarketplace() {
         )}
       </section>
 
-      {/* 4. نافذة منبثقة للحجز مع خانة الكوبون وتفاصيل الفاتورة */}
+      {/* نافذة الحجز مع بطاقة الرمز السري للأوفلاين */}
       {bookingDoctor && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto text-right">
@@ -518,7 +516,6 @@ export default function MedicalMarketplace() {
                     </div>
                   </div>
 
-                  {/* خانة إدخال كوبون الخصم */}
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                     <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
                       <Tag className="w-3.5 h-3.5 text-teal-600" /> هل لديك كود خصم من زيارة سابقة؟
@@ -563,7 +560,6 @@ export default function MedicalMarketplace() {
                     )}
                   </div>
 
-                  {/* خيارات طريقة السداد */}
                   <div className="space-y-2 pt-1 border-t border-slate-100">
                     <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
                       <Wallet className="w-4 h-4 text-teal-600" /> طريقة دفع قيمة الكشف / العربون
@@ -673,6 +669,19 @@ export default function MedicalMarketplace() {
                   </p>
                 </div>
 
+                {/* بطاقة رمز التأكيد السريع للأوفلاين */}
+                <div className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-2 border-amber-500/40 p-3.5 rounded-2xl text-center space-y-1">
+                  <span className="text-[11px] font-bold text-amber-800 flex items-center justify-center gap-1">
+                    <KeyRound className="w-4 h-4 text-amber-600" /> رمز تأكيد حضورك السريع (أوفلاين)
+                  </span>
+                  <div className="font-mono text-2xl font-black text-amber-900 tracking-widest py-0.5">
+                    {bookingSuccess.checkinPin}
+                  </div>
+                  <p className="text-[10px] text-amber-700 leading-tight">
+                    احفظ صورة الشاشة (Screenshot)؛ أعطِ هذا الرمز لموظف الاستقبال عند وصولك لتأكيد حضورك بدون إنترنت!
+                  </p>
+                </div>
+
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs space-y-2 text-right">
                   <div className="flex justify-between">
                     <span className="text-slate-400">المنشأة:</span>
@@ -700,16 +709,12 @@ export default function MedicalMarketplace() {
                   </div>
                 </div>
 
-                {/* بطاقة رابط التوثيق للخصم */}
-                <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl text-right space-y-2 shadow-sm">
+                {/* بطاقة التوثيق أونلاين */}
+                <div className="p-3 bg-teal-50 border border-teal-200 rounded-2xl text-right space-y-1.5 shadow-sm">
                   <div className="flex items-center gap-1.5 text-teal-900 font-bold text-xs">
                     <Gift className="w-4 h-4 text-teal-700 flex-shrink-0" />
-                    <span>احصل على كود خصم إضافي بعد إتمام زيارتك:</span>
+                    <span>رابط التوثيق بالكاميرا (إذا توفر لديك إنترنت):</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    بعد الكشف لدى العيادة، اضغط على الرابط لتوثيق حضورك وتقييم الزيارة:
-                  </p>
-
                   <div className="bg-white p-2 rounded-xl border border-teal-200 flex items-center justify-between gap-2">
                     <input 
                       type="text" 
@@ -746,6 +751,7 @@ export default function MedicalMarketplace() {
                     `مرحبا ${bookingSuccess.facilityName}،\n` +
                     `حجز موعد طبي جديد عبر المنصة الوسيطة:\n` +
                     `* رقم الحجز: ${bookingSuccess.bookingCode}\n` +
+                    `🔑 رمز التحقق السريع (PIN): ${bookingSuccess.checkinPin}\n` +
                     `* اسم المريض: ${bookingSuccess.patientName}\n` +
                     `* هاتف المريض: +967${bookingSuccess.patientPhone}\n` +
                     `* الطبيب المطلوب: ${bookingSuccess.doctorName}\n` +
@@ -766,7 +772,7 @@ export default function MedicalMarketplace() {
                         className="inline-flex items-center justify-center gap-2 w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition shadow-lg shadow-emerald-600/20"
                       >
                         <PhoneCall className="w-4 h-4" />
-                        إرسال التذكرة ورابط التوثيق لواتساب المنشأة
+                        إرسال التذكرة والرمز لواتساب المنشأة
                       </a>
 
                       <button
