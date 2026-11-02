@@ -6,7 +6,7 @@ import {
   Building2, Calendar, Phone, Plus, Trash2, 
   Search, Shield, Lock, Stethoscope, Clock, AlertCircle, 
   Loader2, LogOut, Mail, Settings, CheckCircle2, Edit3, Check,
-  CreditCard, Wallet, Copy, AlertTriangle, ArrowUpRight
+  CreditCard, Wallet, Copy, AlertTriangle, ArrowUpRight, Tag
 } from 'lucide-react';
 
 interface Facility {
@@ -287,7 +287,8 @@ export default function UnifiedHospitalPortal() {
         (b.patient_name || '').toLowerCase().includes(q) || 
         (b.patient_phone || '').includes(q) ||
         (b.doctor_name || '').toLowerCase().includes(q) ||
-        (b.transaction_ref || '').includes(q)
+        (b.transaction_ref || '').includes(q) ||
+        (b.applied_coupon || '').toLowerCase().includes(q)
       );
     }
     return result;
@@ -363,7 +364,7 @@ export default function UnifiedHospitalPortal() {
     <main className="min-h-screen bg-slate-100 text-slate-800 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
 
-        {/* تنبيه السقف الائتماني عند اقتراب الحد أو تجاوزه */}
+        {/* تنبيه السقف الائتماني */}
         {isSuspended && (
           <div className="bg-rose-50 border-2 border-rose-300 p-4 rounded-2xl flex items-center gap-3 text-rose-900 text-xs sm:text-sm">
             <AlertTriangle className="w-6 h-6 text-rose-600 flex-shrink-0" />
@@ -466,21 +467,21 @@ export default function UnifiedHospitalPortal() {
           </div>
         </header>
 
-        {/* 1. جدول المواعيد */}
+        {/* 1. جدول المواعيد مع تفاصيل الخصم والمبلغ الصافي */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-teal-600" /> كشف حجوزات المرضى الواردة
+                  <Calendar className="w-5 h-5 text-teal-600" /> كشف حجوزات المرضى وتفاصيل الكوبونات
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">عند تحويل الحالة إلى "تم الكشف" يتم احتساب عمولة الحجز آلياً</p>
+                <p className="text-xs text-slate-400 mt-0.5">يظهر المبلغ الصافي بعد خصم المنصة وتفاصيل الخصومات المعتمدة</p>
               </div>
 
               <div className="relative w-full sm:w-64">
                 <input
                   type="text"
-                  placeholder="بحث باسم أو هاتف أو سند..."
+                  placeholder="بحث باسم أو هاتف أو كود خصم..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs outline-none focus:border-teal-500 bg-slate-50"
@@ -505,7 +506,7 @@ export default function UnifiedHospitalPortal() {
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الطبيب المطلوب</th>
                       <th className="p-3">الموعد والتوقيت</th>
-                      <th className="p-3">طريقة الدفع</th>
+                      <th className="p-3">الحساب والخصم</th>
                       <th className="p-3">حالة الحجز</th>
                       <th className="p-3">إجراءات</th>
                       <th className="p-3">واتساب</th>
@@ -537,18 +538,18 @@ export default function UnifiedHospitalPortal() {
                             <span className="text-xs text-slate-500">{b.booking_time}</span>
                           </td>
                           <td className="p-3">
-                            {b.payment_method === 'wallet' ? (
+                            {b.discount_amount > 0 ? (
                               <div>
-                                <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px] block w-fit">
-                                  عربون ({b.payment_wallet || 'محفظة'})
+                                <span className="font-mono font-black text-emerald-700 text-xs">
+                                  صافي مطلوب: ${b.deposit_amount}
                                 </span>
-                                <span className="font-mono text-xs text-slate-700 font-bold block mt-0.5">
-                                  سند: {b.transaction_ref || '-'}
+                                <span className="text-[10px] text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded block mt-0.5 w-fit">
+                                  خصم المنصة: -${b.discount_amount} ({b.applied_coupon})
                                 </span>
                               </div>
                             ) : (
-                              <span className="text-slate-600 text-xs bg-slate-100 px-2 py-0.5 rounded">
-                                نقداً عند الحضور
+                              <span className="font-mono font-bold text-slate-800">
+                                ${b.deposit_amount || 20} ({b.payment_method === 'wallet' ? 'محفظة' : 'كاش'})
                               </span>
                             )}
                           </td>
@@ -611,7 +612,7 @@ export default function UnifiedHospitalPortal() {
           </div>
         )}
 
-        {/* 2. تبويب الفوترة وسداد العمولة (جديد) */}
+        {/* 2. تبويب الفوترة وسداد العمولة */}
         {isManager && activeTab === 'billing' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm max-w-3xl mx-auto space-y-6">
             <div className="border-b pb-3 flex justify-between items-center">
@@ -619,7 +620,7 @@ export default function UnifiedHospitalPortal() {
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-teal-600" /> كشف حساب الفوترة والعمولات المستحقة
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">متابعة العمولات المقتطعة عن الكشوفات النقدية وسدادها لحساب المنصة</p>
+                <p className="text-xs text-slate-500 mt-0.5">العمولة تحسب صافية تلقائياً بعد خصم كوبونات المنصة</p>
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                 isSuspended ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
