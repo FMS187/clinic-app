@@ -32,9 +32,9 @@ export default function DashboardSidebar({
   onLogout,
   badgeCounts = {}
 }: SidebarProps) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
-  // تعريف عناصر القائمة بحسب كل رتبة
+  // عناصر القائمة حسب الرتبة
   const getMenuItems = () => {
     switch (role) {
       case 'admin':
@@ -99,50 +99,60 @@ export default function DashboardSidebar({
   const header = getRoleHeader();
   const HeaderIcon = header.icon;
 
-  const handleTabClick = (id: string) => {
+  const handleSelectTab = (id: string) => {
     setActiveTab(id);
-    setMobileOpen(false);
+    setIsOpen(false); // إغلاق القائمة فوراً عند الاختيار
   };
 
   return (
     <>
-      {/* زر القائمة للشاشات الصغيرة */}
-      <div className="lg:hidden fixed top-4 right-4 z-50">
+      {/* زر عائم وثابت لفتح القائمة على الهواتف والشاشات */}
+      <div className="fixed top-4 right-4 z-40">
         <button
-          onClick={() => setMobileOpen(!mobileOpen)}
-          className="p-2.5 bg-slate-900 text-white rounded-2xl border border-slate-700 shadow-xl flex items-center justify-center"
+          onClick={() => setIsOpen(true)}
+          className="p-3 bg-slate-900 text-white rounded-2xl border border-slate-700 shadow-2xl flex items-center gap-2 hover:bg-slate-800 transition active:scale-95"
+          aria-label="فتح القائمة"
         >
-          {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          <Menu className="w-5 h-5 text-teal-400" />
+          <span className="text-xs font-bold hidden sm:inline">القائمة</span>
         </button>
       </div>
 
-      {/* خلفية معتمة للهواتف عند فتح القائمة */}
-      {mobileOpen && (
+      {/* خلفية معتمة تظهر عند فتح القائمة، والنقر عليها يغلقها فوراً */}
+      {isOpen && (
         <div 
-          onClick={() => setMobileOpen(false)}
-          className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity"
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 transition-opacity duration-300"
         />
       )}
 
-      {/* هيكل القائمة الجانبية */}
+      {/* هيكل القائمة الجانبية كشريط Drawer منبثق فوق الصفحة بالكامل */}
       <aside
-        className={`fixed top-0 right-0 h-full w-72 bg-slate-900 border-l border-slate-800 text-white flex flex-col z-40 transition-transform duration-300 ease-in-out ${
-          mobileOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+        className={`fixed top-0 right-0 h-full w-72 sm:w-80 bg-slate-900 border-l border-slate-800 text-white flex flex-col z-50 shadow-2xl transition-transform duration-300 ease-in-out ${
+          isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        {/* ترويسة القائمة */}
-        <div className="p-6 border-b border-slate-800/80">
-          <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${header.color}`}>
-              <HeaderIcon className="w-6 h-6" />
+        {/* ترويسة القائمة مع زر إغلاق صريح */}
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border flex-shrink-0 ${header.color}`}>
+              <HeaderIcon className="w-5 h-5" />
             </div>
-            <div className="flex-grow overflow-hidden">
+            <div className="overflow-hidden">
               <h2 className="font-black text-sm truncate">{header.title}</h2>
-              <span className="inline-block mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+              <span className="inline-block text-[10px] font-bold px-2 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                 {header.badge}
               </span>
             </div>
           </div>
+
+          <button
+            onClick={() => setIsOpen(false)}
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+            title="إغلاق القائمة"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* عناصر التنقل */}
@@ -153,7 +163,7 @@ export default function DashboardSidebar({
             return (
               <button
                 key={item.id}
-                onClick={() => handleTabClick(item.id)}
+                onClick={() => handleSelectTab(item.id)}
                 className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl transition-all duration-200 ${
                   isActive
                     ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/30'
@@ -179,16 +189,17 @@ export default function DashboardSidebar({
         </nav>
 
         {/* أسفل القائمة: المستخدم وزر تسجيل الخروج */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-950/40">
-          <div className="flex items-center justify-between mb-3 px-2">
-            <div className="truncate">
-              <p className="text-[11px] text-slate-400">الحساب الحالي</p>
-              <p className="text-xs font-bold text-slate-200 truncate">{userName}</p>
-            </div>
+        <div className="p-4 border-t border-slate-800 bg-slate-950/50">
+          <div className="mb-3 px-1 truncate">
+            <p className="text-[10px] text-slate-400">الحساب الحالي:</p>
+            <p className="text-xs font-bold text-slate-200 truncate">{userName}</p>
           </div>
 
           <button
-            onClick={onLogout}
+            onClick={() => {
+              setIsOpen(false);
+              onLogout();
+            }}
             className="w-full py-2.5 px-3 bg-rose-500/10 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/20 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
           >
             <LogOut className="w-3.5 h-3.5" />
