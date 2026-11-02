@@ -6,7 +6,7 @@ import {
   Search, MapPin, Stethoscope, Building2, Calendar, 
   Clock, PhoneCall, CheckCircle, ChevronLeft, ShieldCheck, 
   Loader2, Sparkles, Smile, Eye, HeartPulse,
-  Wallet, Copy, Gift
+  Wallet, Copy, Gift, Tag, Check, AlertCircle
 } from 'lucide-react';
 
 interface Facility {
@@ -74,7 +74,14 @@ export default function MedicalMarketplace() {
   const [patientName, setPatientName] = useState('');
   const [patientPhone, setPatientPhone] = useState('');
   const [bookingDate, setBookingDate] = useState('');
-  const [bookingTime, setBookingTime] = useState('10:00 صباحاً');
+  const [bookingTime, setBookingTime] = useState('09:30 صباحاً');
+
+  // الكوبون والخصم
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCouponCode, setAppliedCouponCode] = useState('');
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [verifyingCoupon, setVerifyingCoupon] = useState(false);
+  const [couponStatusMsg, setCouponStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // خيارات السداد
   const [paymentType, setPaymentType] = useState<'cash' | 'wallet'>('cash');
@@ -144,7 +151,47 @@ export default function MedicalMarketplace() {
     setBookingTime('09:30 صباحاً');
     setPaymentType('cash');
     setTransactionRef('');
+    setCouponInput('');
+    setAppliedCouponCode('');
+    setDiscountAmount(0);
+    setCouponStatusMsg(null);
     setBookingSuccess(null);
+  };
+
+  // التحقق من كود الخصم في قاعدة البيانات
+  const handleVerifyCoupon = async () => {
+    if (!couponInput.trim()) return;
+    setVerifyingCoupon(true);
+    setCouponStatusMsg(null);
+
+    try {
+      const cleanCode = couponInput.trim().toUpperCase();
+      const { data, error } = await supabase
+        .from('Booking')
+        .select('id, discount_coupon, is_coupon_used')
+        .eq('discount_coupon', cleanCode)
+        .single();
+
+      if (error || !data) {
+        setCouponStatusMsg({ type: 'error', text: 'كود الخصم غير صحيح أو غير موجود.' });
+        setAppliedCouponCode('');
+        setDiscountAmount(0);
+      } else if (data.is_coupon_used) {
+        setCouponStatusMsg({ type: 'error', text: 'عذراً، تم استخدام هذا الكوبون مسبقاً.' });
+        setAppliedCouponCode('');
+        setDiscountAmount(0);
+      } else {
+        // احتساب خصم 15% (أو خصم ثابت $1 من عمولة المنصة)
+        const fee = bookingDoctor?.consultation_fee || 20;
+        const discount = Math.min(fee * 0.15, 2.0); // خصم 15% بحد أقصى يعادل عمولة المنصة
+        setAppliedCouponCode(cleanCode);
+        setDiscountAmount(Number(discount.toFixed(2)));
+        setCouponStatusMsg({ type: 'success', text: `تم تفعيل الخصم بنجاح! تم توفير $${discount.toFixed(2)}` });
+      }
+    } catch (e) {
+      setCouponStatusMsg({ type: 'error', text: 'حدث خطأ أثناء فحص الكوبون.' });
+    }
+    setVerifyingCoupon(false);
   };
 
   const copyToClipboard = (text: string) => {
@@ -175,6 +222,8 @@ export default function MedicalMarketplace() {
     if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
 
     const bookingCode = `YE-${Math.floor(10000 + Math.random() * 90000)}`;
+    const originalFee = bookingDoctor.consultation_fee || 20;
+    const finalFee = Math.max(0, originalFee - discountAmount);
 
     const { data, error } = await supabase.from('Booking').insert([
       {
@@ -188,11 +237,13 @@ export default function MedicalMarketplace() {
         booking_time: bookingTime,
         patient_name: patientName,
         patient_phone: cleanPhone,
-        deposit_amount: bookingDoctor.consultation_fee || 15,
+        deposit_amount: finalFee,
         status: 'pending',
         payment_method: paymentType,
         payment_wallet: paymentType === 'wallet' ? selectedWallet : null,
-        transaction_ref: paymentType === 'wallet' ? transactionRef : null
+        transaction_ref: paymentType === 'wallet' ? transactionRef : null,
+        applied_coupon: appliedCouponCode || null,
+        discount_amount: discountAmount
       }
     ]).select();
 
@@ -203,7 +254,6 @@ export default function MedicalMarketplace() {
       const origin = typeof window !== 'undefined' ? window.location.origin : 'https://clinic-app-silk-phi.vercel.app';
       const verifyUrl = `${origin}/verify?id=${insertedBooking.id}`;
 
-      // إضافة الموعد الجديد للذاكرة المحلية ليحجب الوقت فوراً
       setBookings(prev => [...prev, {
         id: insertedBooking.id,
         doctor_name: bookingDoctor.name,
@@ -222,7 +272,10 @@ export default function MedicalMarketplace() {
         facilityPhone: bookingFacility.whatsapp_number,
         date: bookingDate,
         time: bookingTime,
-        fee: bookingDoctor.consultation_fee || 15,
+        originalFee,
+        finalFee,
+        discountAmount,
+        appliedCouponCode,
         paymentType,
         selectedWallet,
         transactionRef,
@@ -376,7 +429,7 @@ export default function MedicalMarketplace() {
         )}
       </section>
 
-      {/* 4. نافذة منبثقة للحجز مع حجب التوقيتات المحجوزة */}
+      {/* 4. نافذة منبثقة للحجز مع خانة الكوبون وتفاصيل الفاتورة */}
       {bookingDoctor && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto text-right">
@@ -463,6 +516,51 @@ export default function MedicalMarketplace() {
                         })}
                       </select>
                     </div>
+                  </div>
+
+                  {/* خانة إدخال كوبون الخصم */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                      <Tag className="w-3.5 h-3.5 text-teal-600" /> هل لديك كود خصم من زيارة سابقة؟
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="أدخل الكود هنا (مثال: CARE-1234)"
+                        value={couponInput}
+                        onChange={(e) => setCouponInput(e.target.value)}
+                        className="flex-grow p-2 bg-white border border-slate-300 rounded-xl text-xs font-mono uppercase outline-none focus:border-teal-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleVerifyCoupon}
+                        disabled={verifyingCoupon || !couponInput.trim()}
+                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap"
+                      >
+                        {verifyingCoupon ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'تطبيق'}
+                      </button>
+                    </div>
+
+                    {couponStatusMsg && (
+                      <p className={`text-[11px] font-bold flex items-center gap-1 ${
+                        couponStatusMsg.type === 'success' ? 'text-emerald-600' : 'text-rose-500'
+                      }`}>
+                        {couponStatusMsg.type === 'success' ? <Check className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                        {couponStatusMsg.text}
+                      </p>
+                    )}
+
+                    {discountAmount > 0 && (
+                      <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
+                        <span className="text-slate-500">رسوم الكشف بعد الخصم:</span>
+                        <div className="flex items-center gap-2">
+                          <span className="line-through text-slate-400 font-mono">${bookingDoctor.consultation_fee || 20}</span>
+                          <span className="font-black text-emerald-600 font-mono text-sm">
+                            ${Math.max(0, (bookingDoctor.consultation_fee || 20) - discountAmount).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* خيارات طريقة السداد */}
@@ -588,12 +686,16 @@ export default function MedicalMarketplace() {
                     <span className="text-slate-400">الموعد:</span>
                     <span className="font-bold text-slate-800">{bookingSuccess.date} ({bookingSuccess.time})</span>
                   </div>
+                  {bookingSuccess.discountAmount > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-bold border-t pt-1.5">
+                      <span>خصم الكوبون ({bookingSuccess.appliedCouponCode}):</span>
+                      <span>-${bookingSuccess.discountAmount}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between border-t pt-2">
-                    <span className="text-slate-400">طريقة السداد:</span>
-                    <span className="font-bold text-emerald-700">
-                      {bookingSuccess.paymentType === 'wallet' 
-                        ? `عربون محفظة (سند: ${bookingSuccess.transactionRef})` 
-                        : 'نقداً عند الحضور'}
+                    <span className="text-slate-400">المبلغ المطلوب سداده:</span>
+                    <span className="font-black text-slate-900 font-mono text-sm">
+                      ${bookingSuccess.finalFee} ({bookingSuccess.paymentType === 'wallet' ? 'عربون محفظة' : 'نقداً بالاستقبال'})
                     </span>
                   </div>
                 </div>
@@ -602,10 +704,10 @@ export default function MedicalMarketplace() {
                 <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl text-right space-y-2 shadow-sm">
                   <div className="flex items-center gap-1.5 text-teal-900 font-bold text-xs">
                     <Gift className="w-4 h-4 text-teal-700 flex-shrink-0" />
-                    <span>احصل على خصم 15% بعد إتمام كشفك:</span>
+                    <span>احصل على كود خصم إضافي بعد إتمام زيارتك:</span>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    بعد زيارتك للعيادة، اضغط على رابط التوثيق التالي لتقييم زيارتك واستلام كود الخصم فوراً:
+                    بعد الكشف لدى العيادة، اضغط على الرابط لتوثيق حضورك وتقييم الزيارة:
                   </p>
 
                   <div className="bg-white p-2 rounded-xl border border-teal-200 flex items-center justify-between gap-2">
@@ -632,6 +734,10 @@ export default function MedicalMarketplace() {
                   if (fNum.startsWith('0')) fNum = fNum.slice(1);
                   const targetWa = '967' + fNum;
 
+                  const couponDetail = bookingSuccess.discountAmount > 0 
+                    ? `* خصم منصة مطبق: $${bookingSuccess.discountAmount} (كوبون: ${bookingSuccess.appliedCouponCode})\n* المطلوب تحصيله كاش: $${bookingSuccess.finalFee}\n`
+                    : `* الرسوم المطلوبة: $${bookingSuccess.finalFee}\n`;
+
                   const payInfo = bookingSuccess.paymentType === 'wallet' 
                     ? `* تم سداد العربون عبر: ${walletNames[bookingSuccess.selectedWallet]}\n* رقم الحوالة: ${bookingSuccess.transactionRef}\n`
                     : `* طريقة الدفع: نقداً عند الحضور\n`;
@@ -644,8 +750,9 @@ export default function MedicalMarketplace() {
                     `* هاتف المريض: +967${bookingSuccess.patientPhone}\n` +
                     `* الطبيب المطلوب: ${bookingSuccess.doctorName}\n` +
                     `* الموعد: ${bookingSuccess.date} الساعة ${bookingSuccess.time}\n` +
+                    couponDetail +
                     payInfo +
-                    `\n🔗 رابط توثيق المريض وتفعيل الخصم:\n${bookingSuccess.verifyUrl}\n\n` +
+                    `\n🔗 رابط توثيق المريض:\n${bookingSuccess.verifyUrl}\n\n` +
                     `يرجى تأكيد الحجز وإدراجه في جدول الاستقبال.`
                   );
                   const waUrl = `https://api.whatsapp.com/send?phone=${targetWa}&text=${msg}`;
