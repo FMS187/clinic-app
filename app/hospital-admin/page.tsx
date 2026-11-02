@@ -193,7 +193,7 @@ export default function UnifiedHospitalPortal() {
   // تأكيد حضور المريض بالرمز السري أوفلاين
   const handleVerifyOfflinePin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputPin.trim() || !facility) return;
+    if (!inputPin.trim()) return;
 
     setPinLoading(true);
     setPinResult(null);
@@ -201,41 +201,45 @@ export default function UnifiedHospitalPortal() {
     const targetPin = inputPin.trim();
 
     try {
-      const { data: matchedBookings, error } = await supabase
-        .from('Booking')
-        .select('*')
-        .eq('facility_id', facility.id)
-        .eq('checkin_pin', targetPin)
-        .single();
+      // البحث عن الحجز برمز PIN بغض النظر عن حالة الأحرف
+      let query = supabase.from('Booking').select('*').eq('checkin_pin', targetPin);
+      if (facility?.id) {
+        query = query.eq('facility_id', facility.id);
+      }
 
-      if (error || !matchedBookings) {
-        setPinResult({ type: 'error', text: 'الرمز غير صحيح أو غير مسجل لدى منشأتكم.' });
-      } else if (matchedBookings.status === 'completed') {
-        setPinResult({ type: 'error', text: `تم توثيق هذا الحجز مسبقاً باسم (${matchedBookings.patient_name}).` });
+      const { data: matchedBookings, error } = await query;
+
+      if (error || !matchedBookings || matchedBookings.length === 0) {
+        setPinResult({ type: 'error', text: 'الرمز غير صحيح أو غير مسجل في الحجوزات.' });
       } else {
-        let activeCoupon = matchedBookings.discount_coupon;
-        if (!activeCoupon) {
-          activeCoupon = `CARE-${Math.floor(1000 + Math.random() * 9000)}`;
+        const booking = matchedBookings[0];
+        if (booking.status === 'completed') {
+          setPinResult({ type: 'error', text: `تم توثيق هذا الحجز مسبقاً للمريض (${booking.patient_name}).` });
+        } else {
+          let activeCoupon = booking.discount_coupon;
+          if (!activeCoupon) {
+            activeCoupon = `CARE-${Math.floor(1000 + Math.random() * 9000)}`;
+          }
+
+          await supabase
+            .from('Booking')
+            .update({
+              status: 'completed',
+              verified_by_patient: true,
+              discount_coupon: activeCoupon
+            })
+            .eq('id', booking.id);
+
+          setPinResult({ 
+            type: 'success', 
+            text: `تم تأكيد حضور المريض (${booking.patient_name}) بنجاح! كود الخصم الممنوح: ${activeCoupon}` 
+          });
+          setInputPin('');
+          if (user) loadFacilityData(user);
         }
-
-        await supabase
-          .from('Booking')
-          .update({
-            status: 'completed',
-            verified_by_patient: true,
-            discount_coupon: activeCoupon
-          })
-          .eq('id', matchedBookings.id);
-
-        setPinResult({ 
-          type: 'success', 
-          text: `تم إثبات حضور المريض (${matchedBookings.patient_name}) بنجاح! كود خصمه: ${activeCoupon}` 
-        });
-        setInputPin('');
-        if (user) loadFacilityData(user);
       }
     } catch (err) {
-      setPinResult({ type: 'error', text: 'حدث خطأ أثناء معالجة الرمز.' });
+      setPinResult({ type: 'error', text: 'حدث خطأ أثناء فحص الرمز.' });
     }
     setPinLoading(false);
   };
@@ -492,7 +496,7 @@ export default function UnifiedHospitalPortal() {
 
                   <button
                     onClick={() => setActiveTab('doctors')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
                       activeTab === 'doctors' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                     }`}
                   >
@@ -501,7 +505,7 @@ export default function UnifiedHospitalPortal() {
 
                   <button
                     onClick={() => setActiveTab('settings')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
                       activeTab === 'settings' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600'
                     }`}
                   >
@@ -521,15 +525,16 @@ export default function UnifiedHospitalPortal() {
           </div>
         </header>
 
-        {/* شريط التحقق السريع للأوفلاين عبر رمز PIN */}
-        <div className="bg-gradient-to-r from-teal-800 to-slate-900 text-white p-5 rounded-3xl shadow-md space-y-3">
+        {/* خانة إدخال الرمز السري لموظف الاستقبال (تظهر دائماً في الواجهة) */}
+        <section className="bg-white border-2 border-amber-400/80 p-5 rounded-3xl shadow-sm space-y-3">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
-              <h3 className="font-bold text-sm sm:text-base flex items-center gap-2 text-teal-200">
-                <KeyRound className="w-5 h-5 text-amber-400" /> تأكيد حضور المريض بالرمز السريع (إذا لم يتوفر لديه إنترنت)
-              </h3>
-              <p className="text-xs text-slate-300 mt-0.5">
-                اطلب من المريض رمز التذكرة السري (4 أرقام من صورة حجزه) لإثبات كشفه فورياً
+              <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-amber-500" />
+                تأكيد حضور المريض بالرمز السري (بدون إنترنت للمريض)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                اطلب من المريض رمز الـ PIN المكون من 4 أرقام الموجود في تذكرة حجزه لإثبات الكشف وتأكيد الموعد فوراً.
               </p>
             </div>
 
@@ -538,31 +543,31 @@ export default function UnifiedHospitalPortal() {
                 type="text"
                 maxLength={6}
                 required
-                placeholder="رمز PIN (4 أرقام)"
+                placeholder="أدخل الرمز PIN"
                 value={inputPin}
                 onChange={(e) => setInputPin(e.target.value)}
-                className="p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono font-black text-center text-amber-300 outline-none w-36 focus:border-amber-400"
+                className="p-3 bg-amber-50 border-2 border-amber-300 rounded-2xl text-sm font-mono font-black text-center text-amber-900 outline-none w-40 focus:border-amber-500"
               />
               <button
                 type="submit"
                 disabled={pinLoading || !inputPin.trim()}
-                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition flex items-center gap-1 shadow-sm whitespace-nowrap"
+                className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-2xl transition flex items-center gap-1 shadow-md shadow-amber-500/20 whitespace-nowrap"
               >
-                {pinLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                {pinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 تأكيد الحضور
               </button>
             </form>
           </div>
 
           {pinResult && (
-            <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
-              pinResult.type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+            <div className={`p-3 rounded-2xl text-xs font-bold flex items-center gap-2 ${
+              pinResult.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
             }`}>
-              {pinResult.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+              {pinResult.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />}
               {pinResult.text}
             </div>
           )}
-        </div>
+        </section>
 
         {/* 1. جدول المواعيد */}
         {activeTab === 'bookings' && (
