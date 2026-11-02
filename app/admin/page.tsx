@@ -9,7 +9,7 @@ import {
   Loader2, Mail, Settings, CheckCircle2, Edit3, Check,
   DollarSign, Activity, MapPin, Power, RefreshCw, CreditCard,
   AlertTriangle, Receipt, ArrowDownCircle, MessageSquareShare, 
-  Tag, TrendingUp, UserCheck
+  Tag, TrendingUp, UserCheck, ArrowUpRight, BarChart3, Filter
 } from 'lucide-react';
 
 interface Facility {
@@ -37,8 +37,8 @@ export default function SuperAdminDashboard() {
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  // التبويب النشط من القائمة الجانبية
-  const [activeTab, setActiveTab] = useState<'overview' | 'billing' | 'cancelled_audit' | 'facilities' | 'bookings' | 'coupons' | 'settings'>('overview');
+  // التبويب النشط
+  const [activeTab, setActiveTab] = useState<'overview' | 'billing' | 'cancelled_audit' | 'facilities' | 'bookings' | 'analytics' | 'coupons' | 'settings'>('overview');
 
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
@@ -46,12 +46,36 @@ export default function SuperAdminDashboard() {
   const [runningCron, setRunningCron] = useState(false);
   const [cronSuccessMsg, setCronSuccessMsg] = useState('');
 
+  // فلترة سجل الحجوزات
+  const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
+  const [bookingSearch, setBookingSearch] = useState('');
+
+  // إضافة منشأة جديدة
+  const [showAddFacilityModal, setShowAddFacilityModal] = useState(false);
+  const [newFac, setNewFac] = useState({
+    name: '',
+    city: 'صنعاء',
+    district: '',
+    address: '',
+    whatsapp_number: '',
+    facility_type: 'hospital',
+    commission_rate: 2.0,
+    credit_limit: 50.0
+  });
+  const [savingFac, setSavingFac] = useState(false);
+
+  // تعديل السقف والعمولة لمنشأة
+  const [editingFac, setEditingFac] = useState<Facility | null>(null);
+  const [editCommissionRate, setEditCommissionRate] = useState<number>(2.0);
+  const [editCreditLimit, setEditCreditLimit] = useState<number>(50.0);
+  const [savingFacSettings, setSavingFacSettings] = useState(false);
+
   // تسجيل سداد
   const [selectedFacilityForPayment, setSelectedFacilityForPayment] = useState<Facility | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [recordingPayment, setRecordingPayment] = useState(false);
 
-  // تشغيل الفحص والمطابقة
+  // فحص الحسابات التلقائي
   const runAutoAuditAndFetch = async () => {
     setRunningCron(true);
     try {
@@ -122,6 +146,95 @@ export default function SuperAdminDashboard() {
     }
   };
 
+  // إضافة منشأة جديدة
+  const handleCreateFacility = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFac.name.trim()) return;
+
+    setSavingFac(true);
+    let clean = newFac.whatsapp_number.replace(/[^0-9]/g, '');
+    if (clean.startsWith('967')) clean = clean.slice(3);
+    if (clean.startsWith('0')) clean = clean.slice(1);
+
+    const { data, error } = await supabase.from('ClinicFacility').insert([
+      {
+        name: newFac.name,
+        city: newFac.city,
+        district: newFac.district,
+        address: newFac.address,
+        phone: clean,
+        whatsapp_number: clean,
+        facility_type: newFac.facility_type,
+        commission_rate: newFac.commission_rate,
+        credit_limit: newFac.credit_limit,
+        current_debt: 0.0,
+        is_active: true,
+        wallets_info: { kuraimi: '', onecash: '' }
+      }
+    ]).select();
+
+    if (data && !error) {
+      setFacilities(prev => [data[0], ...prev]);
+      setShowAddFacilityModal(false);
+      setNewFac({
+        name: '',
+        city: 'صنعاء',
+        district: '',
+        address: '',
+        whatsapp_number: '',
+        facility_type: 'hospital',
+        commission_rate: 2.0,
+        credit_limit: 50.0
+      });
+      alert('تمت إضافة المنشأة بنجاح.');
+    } else {
+      alert(`خطأ: ${error?.message || 'تعذر إضافة المنشأة'}`);
+    }
+    setSavingFac(false);
+  };
+
+  // حفظ تعديل إعدادات العمولة والسقف للمنشأة
+  const handleSaveFacilitySettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFac) return;
+
+    setSavingFacSettings(true);
+    const { error } = await supabase
+      .from('ClinicFacility')
+      .update({
+        commission_rate: editCommissionRate,
+        credit_limit: editCreditLimit
+      })
+      .eq('id', editingFac.id);
+
+    if (!error) {
+      setFacilities(prev => prev.map(f => f.id === editingFac.id ? {
+        ...f,
+        commission_rate: editCommissionRate,
+        credit_limit: editCreditLimit
+      } : f));
+      setEditingFac(null);
+    }
+    setSavingFacSettings(false);
+  };
+
+  // حذف منشأة
+  const handleDeleteFacility = async (facId: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذه المنشأة؟ سيتم إزالة كافة السجلات المرتبطة بها.')) return;
+    const { error } = await supabase.from('ClinicFacility').delete().eq('id', facId);
+    if (!error) {
+      setFacilities(prev => prev.filter(f => f.id !== facId));
+    }
+  };
+
+  // تعديل حالة حجز يدوياً
+  const handleUpdateBookingStatus = async (bookingId: string | number, newStatus: string) => {
+    const { error } = await supabase.from('Booking').update({ status: newStatus }).eq('id', bookingId);
+    if (!error) {
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b));
+    }
+  };
+
   // تسجيل سداد مالي
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,6 +296,33 @@ export default function SuperAdminDashboard() {
     return bookings.filter(b => b.status === 'cancelled');
   }, [bookings]);
 
+  // إحصائيات الأداء واستخدام المنصة
+  const analyticsData = useMemo(() => {
+    const total = bookings.length;
+    const completed = bookings.filter(b => b.status === 'completed').length;
+    const cancelled = bookings.filter(b => b.status === 'cancelled').length;
+    const pending = bookings.filter(b => b.status === 'pending').length;
+    const couponUsedCount = bookings.filter(b => b.applied_coupon).length;
+
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const cancellationRate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
+    const couponUsageRate = total > 0 ? Math.round((couponUsedCount / total) * 100) : 0;
+
+    // المنشآت الأكثر استقبالاً للمرضى
+    const facCounts: Record<string, number> = {};
+    bookings.forEach(b => {
+      const name = b.facility_name || 'غير محدد';
+      facCounts[name] = (facCounts[name] || 0) + 1;
+    });
+
+    const topFacilities = Object.entries(facCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    return { total, completed, cancelled, pending, couponUsedCount, completionRate, cancellationRate, couponUsageRate, topFacilities };
+  }, [bookings]);
+
   const stats = useMemo(() => {
     const totalFacilities = facilities.length;
     const totalUncollectedDebt = facilities.reduce((sum, f) => sum + Number(f.current_debt || 0), 0);
@@ -190,6 +330,21 @@ export default function SuperAdminDashboard() {
     const totalEarnedRevenue = completedBookings * 1.5;
     return { totalFacilities, totalUncollectedDebt, completedBookings, totalEarnedRevenue };
   }, [facilities, bookings]);
+
+  // الحجوزات بعد الفلترة والبحث
+  const filteredBookingsList = useMemo(() => {
+    return bookings.filter(b => {
+      const matchesStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
+      const q = bookingSearch.toLowerCase().trim();
+      const matchesSearch = !q ||
+        (b.patient_name || '').toLowerCase().includes(q) ||
+        (b.patient_phone || '').includes(q) ||
+        (b.doctor_name || '').toLowerCase().includes(q) ||
+        (b.facility_name || '').toLowerCase().includes(q) ||
+        (b.checkin_pin || '').includes(q);
+      return matchesStatus && matchesSearch;
+    });
+  }, [bookings, bookingStatusFilter, bookingSearch]);
 
   if (loadingAuth) {
     return (
@@ -244,7 +399,6 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      {/* 1. القائمة الجانبية الموحدة */}
       <DashboardSidebar
         role="admin"
         activeTab={activeTab}
@@ -257,7 +411,6 @@ export default function SuperAdminDashboard() {
         }}
       />
 
-      {/* 2. منطقة المحتوى الرئيسية */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-8 space-y-6 pt-16 sm:pt-8">
         
         {/* شريط الإجراءات العلوي */}
@@ -268,21 +421,33 @@ export default function SuperAdminDashboard() {
               {activeTab === 'billing' && 'الفوترة والتحصيل المالي'}
               {activeTab === 'cancelled_audit' && 'مركز تدقيق الإلغاءات المشبوهة'}
               {activeTab === 'facilities' && 'دليل وإدارة المنشآت الطبية'}
-              {activeTab === 'bookings' && 'سجل الحجوزات الشامل'}
+              {activeTab === 'bookings' && 'سجل الحجوزات والتحكم الشامل'}
+              {activeTab === 'analytics' && 'حركة الدخول واستخدام المنصة'}
               {activeTab === 'coupons' && 'إدارة العروض والكوبونات'}
               {activeTab === 'settings' && 'إعدادات المنصة المركزية'}
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">غرفة عمليات الوساطة الطبية وإدارة السيولة</p>
           </div>
 
-          <button
-            onClick={runAutoAuditAndFetch}
-            disabled={runningCron}
-            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-teal-300 rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-sm"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${runningCron ? 'animate-spin' : ''}`} />
-            {runningCron ? 'جاري الفحص...' : 'فحص ومطابقة الحسابات'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 border ${
+                activeTab === 'analytics' ? 'bg-teal-600 text-white border-teal-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" /> تقرير الاستخدام
+            </button>
+
+            <button
+              onClick={runAutoAuditAndFetch}
+              disabled={runningCron}
+              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-teal-300 rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-sm"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${runningCron ? 'animate-spin' : ''}`} />
+              {runningCron ? 'جاري الفحص...' : 'فحص ومطابقة'}
+            </button>
+          </div>
         </div>
 
         {cronSuccessMsg && (
@@ -292,38 +457,345 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* المؤشرات والنمو */}
+        {/* 1. المؤشرات التفاعلية (قابلة للنقر) */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 block mb-1">صافي أرباح المنصة</span>
-                <span className="text-3xl font-black text-emerald-600 font-mono">${stats.totalEarnedRevenue}</span>
-                <span className="text-[11px] text-slate-500 block mt-1">عن {stats.completedBookings} كشفاً مكتملاً</span>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  setBookingStatusFilter('completed');
+                  setActiveTab('bookings');
+                }}
+                className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-right hover:border-emerald-500 hover:shadow-md transition group"
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-xs font-bold text-slate-400 group-hover:text-emerald-700 transition">صافي أرباح المنصة</span>
+                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition" />
+                </div>
+                <span className="text-3xl font-black text-emerald-600 font-mono mt-1 block">${stats.totalEarnedRevenue}</span>
+                <span className="text-[11px] text-slate-500 block mt-1">عن {stats.completedBookings} كشفاً مكتملاً (انقر للعرض)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('billing')}
+                className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-right hover:border-rose-500 hover:shadow-md transition group"
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-xs font-bold text-slate-400 group-hover:text-rose-700 transition">المديونية قيد التحصيل</span>
+                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-rose-600 transition" />
+                </div>
+                <span className="text-3xl font-black text-rose-600 font-mono mt-1 block">${stats.totalUncollectedDebt}</span>
+                <span className="text-[11px] text-slate-500 block mt-1">عمولات لم تسدد بعد (انقر للتحصيل)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('facilities')}
+                className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-right hover:border-teal-500 hover:shadow-md transition group"
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-xs font-bold text-slate-400 group-hover:text-teal-700 transition">المنشآت المشتركة</span>
+                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-teal-600 transition" />
+                </div>
+                <span className="text-3xl font-black text-slate-900 font-mono mt-1 block">{stats.totalFacilities}</span>
+                <span className="text-[11px] text-teal-700 block mt-1">مستشفيات ومراكز (انقر للإدارة)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('cancelled_audit')}
+                className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-right hover:border-amber-500 hover:shadow-md transition group"
+              >
+                <div className="flex justify-between items-start">
+                  <span className="text-xs font-bold text-slate-400 group-hover:text-amber-700 transition">الحالات الملغاة</span>
+                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-amber-600 transition" />
+                </div>
+                <span className="text-3xl font-black text-amber-600 font-mono mt-1 block">{cancelledBookings.length}</span>
+                <span className="text-[11px] text-slate-500 block mt-1">بحاجة للتدقيق الهاتفي (انقر للمعاينة)</span>
+              </button>
+
+            </div>
+
+            {/* ملخص حركة الحجوزات الأخيرة */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex justify-between items-center border-b pb-3">
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-teal-600" /> أحدث الحجوزات عبر المنصة
+                </h3>
+                <button
+                  onClick={() => {
+                    setBookingStatusFilter('all');
+                    setActiveTab('bookings');
+                  }}
+                  className="text-xs font-bold text-teal-700 hover:underline"
+                >
+                  عرض الكل ({bookings.length})
+                </button>
               </div>
 
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 block mb-1">المديونية قيد التحصيل</span>
-                <span className="text-3xl font-black text-rose-600 font-mono">${stats.totalUncollectedDebt}</span>
-                <span className="text-[11px] text-slate-500 block mt-1">عمولات لم تسدد بعد</span>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 block mb-1">المنشآت المشتركة</span>
-                <span className="text-3xl font-black text-slate-900 font-mono">{stats.totalFacilities}</span>
-                <span className="text-[11px] text-teal-700 block mt-1">مستشفيات ومراكز تخصصية</span>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 block mb-1">الحالات الملغاة</span>
-                <span className="text-3xl font-black text-amber-600 font-mono">{cancelledBookings.length}</span>
-                <span className="text-[11px] text-slate-500 block mt-1">بحاجة للتدقيق الهاتفي</span>
+              <div className="divide-y divide-slate-100">
+                {bookings.slice(0, 5).map(b => (
+                  <div key={b.id} className="py-2.5 flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-bold text-slate-900">{b.patient_name}</span>
+                      <span className="text-slate-400 mx-1.5">•</span>
+                      <span className="text-slate-600">{b.facility_name}</span>
+                      <span className="text-slate-400 mx-1.5">•</span>
+                      <span className="text-teal-700 font-bold">{b.doctor_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-slate-400">{b.booking_date}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        b.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                        b.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' :
+                        b.status === 'cancelled' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {b.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         )}
 
-        {/* الفوترة والتحصيل */}
+        {/* 2. تحليلات حركة الدخول والاستخدام (Traffic & Usage Analytics) */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+                <span className="text-xs font-bold text-slate-400 block mb-1">معدل إتمام الكشوفات</span>
+                <span className="text-3xl font-black text-teal-700 font-mono">{analyticsData.completionRate}%</span>
+                <span className="text-[11px] text-slate-500 block mt-1">{analyticsData.completed} كشفاً منجزاً بنجاح</span>
+              </div>
+
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+                <span className="text-xs font-bold text-slate-400 block mb-1">نسبة استخدام الكوبونات</span>
+                <span className="text-3xl font-black text-emerald-600 font-mono">{analyticsData.couponUsageRate}%</span>
+                <span className="text-[11px] text-slate-500 block mt-1">{analyticsData.couponUsedCount} مريض استفاد من الخصم</span>
+              </div>
+
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+                <span className="text-xs font-bold text-slate-400 block mb-1">معدل الإلغاء المشبوه</span>
+                <span className="text-3xl font-black text-rose-600 font-mono">{analyticsData.cancellationRate}%</span>
+                <span className="text-[11px] text-slate-500 block mt-1">{analyticsData.cancelled} كشفاً ملغياً</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b pb-3">
+                  <Building2 className="w-4 h-4 text-teal-600" /> أكثر المنشآت جذباً للمرضى
+                </h3>
+                <div className="space-y-3">
+                  {analyticsData.topFacilities.map((fac, idx) => (
+                    <div key={fac.name} className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-800">
+                        {idx + 1}. {fac.name}
+                      </span>
+                      <span className="font-mono bg-teal-50 text-teal-800 px-2.5 py-1 rounded-lg font-bold">
+                        {fac.count} حجز
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b pb-3">
+                  <Activity className="w-4 h-4 text-teal-600" /> مقاييس التفاعل والسيولة
+                </h3>
+                <div className="space-y-2.5 text-xs text-slate-600">
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span>إجمالي الحجوزات المنفذة عبر المنصة:</span>
+                    <strong className="font-mono text-slate-900">{analyticsData.total}</strong>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span>الحجوزات قيد الانتظار الحالية:</span>
+                    <strong className="font-mono text-amber-600">{analyticsData.pending}</strong>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span>متوسط صافي دخل المنصة لكل كشف:</span>
+                    <strong className="font-mono text-emerald-600">$1.50</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3. دليل وإدارة المنشآت مع إضافة منشأة جديدة */}
+        {activeTab === 'facilities' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-teal-600" /> دليل المنشآت الطبية المتعاقدة ({facilities.length})
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">يمكنك إضافة منشآت جديدة، وتعديل نسب العمولات والحدود الائتمانية</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAddFacilityModal(true)}
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-teal-600/20"
+              >
+                <Plus className="w-4 h-4" /> إضافة منشأة جديدة
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {facilities.map(fac => (
+                <div key={fac.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-bold text-slate-900">{fac.name}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{fac.city} - {fac.address || 'اليمن'}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${fac.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                      {fac.is_active !== false ? 'مفعل' : 'موقف'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-white p-2.5 rounded-xl border border-slate-200">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">العمولة:</span>
+                      <strong className="text-teal-700">${fac.commission_rate || 2.0}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">السقف:</span>
+                      <strong className="text-slate-800">${fac.credit_limit || 50.0}</strong>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingFac(fac);
+                        setEditCommissionRate(fac.commission_rate || 2.0);
+                        setEditCreditLimit(fac.credit_limit || 50.0);
+                      }}
+                      className="flex-1 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition"
+                    >
+                      ضبط الشروط
+                    </button>
+
+                    <button
+                      onClick={() => toggleFacilityStatus(fac)}
+                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
+                        fac.is_active !== false ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {fac.is_active !== false ? 'إيقاف' : 'تفعيل'}
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteFacility(fac.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-xl transition border border-slate-200"
+                      title="حذف المنشأة"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 4. سجل الحجوزات والتحكم الشامل */}
+        {activeTab === 'bookings' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b pb-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-teal-600" /> سجل الحجوزات الشامل والتحكم
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">يمكنك تعديل حالة أي حجز والبحث باسم المريض أو هاتفه أو PIN</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <div className="relative flex-grow sm:w-60">
+                  <input
+                    type="text"
+                    placeholder="بحث سريع..."
+                    value={bookingSearch}
+                    onChange={(e) => setBookingSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs outline-none bg-slate-50"
+                  />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                </div>
+
+                <select
+                  value={bookingStatusFilter}
+                  onChange={(e) => setBookingStatusFilter(e.target.value)}
+                  className="p-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 outline-none"
+                >
+                  <option value="all">كافة الحالات</option>
+                  <option value="completed">🩺 مكتمل (Completed)</option>
+                  <option value="confirmed">✅ مؤكد (Confirmed)</option>
+                  <option value="pending">⏳ معلق (Pending)</option>
+                  <option value="cancelled">❌ ملغي (Cancelled)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs sm:text-sm">
+                <thead className="bg-slate-50 text-slate-600 border-b">
+                  <tr>
+                    <th className="p-3">المريض</th>
+                    <th className="p-3">رمز PIN</th>
+                    <th className="p-3">المنشأة</th>
+                    <th className="p-3">الطبيب</th>
+                    <th className="p-3">التاريخ</th>
+                    <th className="p-3">الحالة والتحكم</th>
+                    <th className="p-3">العمولة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredBookingsList.map(b => (
+                    <tr key={b.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-bold text-slate-900">
+                        {b.patient_name}
+                        <span className="block text-[11px] font-mono text-slate-400 font-normal">{b.patient_phone}</span>
+                      </td>
+                      <td className="p-3 font-mono font-bold text-amber-700">{b.checkin_pin || '---'}</td>
+                      <td className="p-3 text-slate-700">{b.facility_name}</td>
+                      <td className="p-3 text-teal-700">{b.doctor_name}</td>
+                      <td className="p-3 font-mono">{b.booking_date}</td>
+                      <td className="p-3">
+                        <select
+                          value={b.status || 'pending'}
+                          onChange={(e) => handleUpdateBookingStatus(b.id, e.target.value)}
+                          className={`text-xs font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${
+                            b.status === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                            b.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                            b.status === 'cancelled' ? 'bg-rose-50 text-rose-700 border-rose-300' : 'bg-white text-slate-700'
+                          }`}
+                        >
+                          <option value="pending">معلق</option>
+                          <option value="confirmed">مؤكد</option>
+                          <option value="completed">مكتمل</option>
+                          <option value="cancelled">ملغي</option>
+                        </select>
+                      </td>
+                      <td className="p-3 font-mono font-bold text-emerald-600">
+                        {b.is_commission_settled ? `$${b.platform_fee || 1.5}` : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 5. الفوترة والتحصيل */}
         {activeTab === 'billing' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -393,7 +865,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* تدقيق الإلغاءات */}
+        {/* 6. تدقيق الإلغاءات */}
         {activeTab === 'cancelled_audit' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-rose-700 flex items-center gap-2 border-b pb-3">
@@ -455,76 +927,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* دليل المنشآت */}
-        {activeTab === 'facilities' && (
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
-              <Building2 className="w-5 h-5 text-teal-600" /> دليل المنشآت الطبية المتعاقدة
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {facilities.map(fac => (
-                <div key={fac.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-slate-900">{fac.name}</h3>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${fac.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                      {fac.is_active !== false ? 'مفعل' : 'موقف'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">{fac.city} - {fac.address}</p>
-                  <div className="flex justify-between items-center text-xs font-mono border-t pt-2">
-                    <span>المديونية: ${fac.current_debt || 0}</span>
-                    <span>السقف: ${fac.credit_limit || 50}</span>
-                  </div>
-                  <button
-                    onClick={() => toggleFacilityStatus(fac)}
-                    className={`w-full py-2 rounded-xl text-xs font-bold transition ${
-                      fac.is_active !== false ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    }`}
-                  >
-                    {fac.is_active !== false ? 'إيقاف المنشأة مؤقتاً' : 'إعادة تفعيل المنشأة'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* سجل الحجوزات */}
-        {activeTab === 'bookings' && (
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
-              <Calendar className="w-5 h-5 text-teal-600" /> كافة الحجوزات
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs sm:text-sm">
-                <thead className="bg-slate-50 text-slate-600 border-b">
-                  <tr>
-                    <th className="p-3">المريض</th>
-                    <th className="p-3">المنشأة</th>
-                    <th className="p-3">الموعد</th>
-                    <th className="p-3">الحالة</th>
-                    <th className="p-3">العمولة</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {bookings.map(b => (
-                    <tr key={b.id} className="hover:bg-slate-50">
-                      <td className="p-3 font-bold text-slate-900">{b.patient_name}</td>
-                      <td className="p-3">{b.facility_name}</td>
-                      <td className="p-3 font-mono">{b.booking_date}</td>
-                      <td className="p-3 font-bold">{b.status}</td>
-                      <td className="p-3 font-mono font-bold text-emerald-600">
-                        {b.is_commission_settled ? `$${b.platform_fee || 1.5}` : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* الكوبونات */}
+        {/* 7. الكوبونات */}
         {activeTab === 'coupons' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -542,7 +945,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* إعدادات المنصة */}
+        {/* 8. إعدادات المنصة */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4 max-w-xl">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -562,6 +965,175 @@ export default function SuperAdminDashboard() {
         )}
 
       </main>
+
+      {/* نافذة إضافة منشأة جديدة */}
+      {showAddFacilityModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-slate-900 text-base">إضافة منشأة طبية متعاقدة</h3>
+            <form onSubmit={handleCreateFacility} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">اسم المستشفى / المركز الطبي</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: مستشفى آزال التخصصي"
+                  value={newFac.name}
+                  onChange={(e) => setNewFac({ ...newFac, name: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">المحافظة</label>
+                  <select
+                    value={newFac.city}
+                    onChange={(e) => setNewFac({ ...newFac, city: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white outline-none"
+                  >
+                    <option value="صنعاء">صنعاء</option>
+                    <option value="عدن">عدن</option>
+                    <option value="تعز">تعز</option>
+                    <option value="حضرموت">حضرموت</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">نوع المنشأة</label>
+                  <select
+                    value={newFac.facility_type}
+                    onChange={(e) => setNewFac({ ...newFac, facility_type: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl bg-white outline-none"
+                  >
+                    <option value="hospital">مستشفى</option>
+                    <option value="clinic">مركز تخصصي</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">العنوان بالتفصيل</label>
+                <input
+                  type="text"
+                  placeholder="الشارع - الحي"
+                  value={newFac.address}
+                  onChange={(e) => setNewFac({ ...newFac, address: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">واتساب الاستقبال</label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="77xxxxxxx"
+                  value={newFac.whatsapp_number}
+                  onChange={(e) => setNewFac({ ...newFac, whatsapp_number: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-mono outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">عمولة المنصة ($)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    value={newFac.commission_rate}
+                    onChange={(e) => setNewFac({ ...newFac, commission_rate: Number(e.target.value) })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">السقف الائتماني ($)</label>
+                  <input
+                    type="number"
+                    step="5"
+                    min="10"
+                    value={newFac.credit_limit}
+                    onChange={(e) => setNewFac({ ...newFac, credit_limit: Number(e.target.value) })}
+                    className="w-full p-2.5 border border-slate-300 rounded-xl font-mono outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowAddFacilityModal(false)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingFac}
+                  className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold"
+                >
+                  {savingFac ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'إضافة المنشأة'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة ضبط العمولة والسقف لمنشأة قائمة */}
+      {editingFac && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-right">
+            <h3 className="font-bold text-slate-900 text-base">ضبط شروط التعاقد ({editingFac.name})</h3>
+            <form onSubmit={handleSaveFacilitySettings} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">عمولة الكشف الواحد ($)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  required
+                  value={editCommissionRate}
+                  onChange={(e) => setEditCommissionRate(Number(e.target.value))}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-mono outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">السقف الائتماني للمديونية ($)</label>
+                <input
+                  type="number"
+                  step="5"
+                  min="10"
+                  required
+                  value={editCreditLimit}
+                  onChange={(e) => setEditCreditLimit(Number(e.target.value))}
+                  className="w-full p-2.5 border border-slate-300 rounded-xl font-mono outline-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingFac(null)}
+                  className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingFacSettings}
+                  className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold"
+                >
+                  {savingFacSettings ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'تحديث الشروط'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* نافذة تسجيل السداد */}
       {selectedFacilityForPayment && (
