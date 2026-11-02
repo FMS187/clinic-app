@@ -207,7 +207,7 @@ export default function MedicalMarketplace() {
         verifyUrl
       });
     } else {
-      alert('تعذر إتمام الحجز، يرجى المحاولة مرة أخرى.');
+      alert(`خطأ في الحجز: ${error?.message || JSON.stringify(error)}`);
     }
   };
 
