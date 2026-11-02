@@ -258,7 +258,8 @@ export default function SuperAdminDashboard() {
       />
 
       {/* 2. منطقة المحتوى الرئيسية (معدلة لتناسب عرض القائمة الجانبية) */}
-      <main className="flex-1 lg:mr-72 p-4 sm:p-8 space-y-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-8 space-y-6 pt-16 sm:pt-8"
+
         
         {/* شريط الإجراءات العلوي */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
