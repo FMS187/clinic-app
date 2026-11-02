@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { 
   Building2, Calendar, Phone, Plus, Trash2, 
   Search, Shield, Lock, Stethoscope, Clock, AlertCircle, 
-  Loader2, LogOut, Mail, Settings, CheckCircle2, Edit3, Check,
-  CreditCard, Wallet, Copy, AlertTriangle, ArrowUpRight, Tag
+  Loader2, LogOut, Settings, CheckCircle2, Edit3, Check,
+  CreditCard, Wallet, AlertTriangle, KeyRound, Sparkles
 } from 'lucide-react';
 
 interface Facility {
@@ -60,6 +60,11 @@ export default function UnifiedHospitalPortal() {
   const [loadingData, setLoadingData] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
+
+  // خانة التأكيد السريع للأوفلاين عبر رمز PIN
+  const [inputPin, setInputPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinResult, setPinResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // بيانات المحافظ الخاصة بالمنشأة
   const [wallets, setWallets] = useState({
@@ -185,6 +190,56 @@ export default function UnifiedHospitalPortal() {
     setFacility(null);
   };
 
+  // تأكيد حضور المريض بالرمز السري أوفلاين
+  const handleVerifyOfflinePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputPin.trim() || !facility) return;
+
+    setPinLoading(true);
+    setPinResult(null);
+
+    const targetPin = inputPin.trim();
+
+    try {
+      const { data: matchedBookings, error } = await supabase
+        .from('Booking')
+        .select('*')
+        .eq('facility_id', facility.id)
+        .eq('checkin_pin', targetPin)
+        .single();
+
+      if (error || !matchedBookings) {
+        setPinResult({ type: 'error', text: 'الرمز غير صحيح أو غير مسجل لدى منشأتكم.' });
+      } else if (matchedBookings.status === 'completed') {
+        setPinResult({ type: 'error', text: `تم توثيق هذا الحجز مسبقاً باسم (${matchedBookings.patient_name}).` });
+      } else {
+        let activeCoupon = matchedBookings.discount_coupon;
+        if (!activeCoupon) {
+          activeCoupon = `CARE-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+
+        await supabase
+          .from('Booking')
+          .update({
+            status: 'completed',
+            verified_by_patient: true,
+            discount_coupon: activeCoupon
+          })
+          .eq('id', matchedBookings.id);
+
+        setPinResult({ 
+          type: 'success', 
+          text: `تم إثبات حضور المريض (${matchedBookings.patient_name}) بنجاح! كود خصمه: ${activeCoupon}` 
+        });
+        setInputPin('');
+        if (user) loadFacilityData(user);
+      }
+    } catch (err) {
+      setPinResult({ type: 'error', text: 'حدث خطأ أثناء معالجة الرمز.' });
+    }
+    setPinLoading(false);
+  };
+
   const handleUpdateStatus = async (bookingId: string | number, newStatus: string) => {
     const { error } = await supabase.from('Booking').update({ status: newStatus }).eq('id', bookingId);
     if (!error) {
@@ -287,7 +342,7 @@ export default function UnifiedHospitalPortal() {
         (b.patient_name || '').toLowerCase().includes(q) || 
         (b.patient_phone || '').includes(q) ||
         (b.doctor_name || '').toLowerCase().includes(q) ||
-        (b.transaction_ref || '').includes(q) ||
+        (b.checkin_pin || '').includes(q) ||
         (b.applied_coupon || '').toLowerCase().includes(q)
       );
     }
@@ -364,7 +419,6 @@ export default function UnifiedHospitalPortal() {
     <main className="min-h-screen bg-slate-100 text-slate-800 p-4 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
 
-        {/* تنبيه السقف الائتماني */}
         {isSuspended && (
           <div className="bg-rose-50 border-2 border-rose-300 p-4 rounded-2xl flex items-center gap-3 text-rose-900 text-xs sm:text-sm">
             <AlertTriangle className="w-6 h-6 text-rose-600 flex-shrink-0" />
@@ -467,7 +521,50 @@ export default function UnifiedHospitalPortal() {
           </div>
         </header>
 
-        {/* 1. جدول المواعيد مع تفاصيل الخصم والمبلغ الصافي */}
+        {/* شريط التحقق السريع للأوفلاين عبر رمز PIN */}
+        <div className="bg-gradient-to-r from-teal-800 to-slate-900 text-white p-5 rounded-3xl shadow-md space-y-3">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h3 className="font-bold text-sm sm:text-base flex items-center gap-2 text-teal-200">
+                <KeyRound className="w-5 h-5 text-amber-400" /> تأكيد حضور المريض بالرمز السريع (إذا لم يتوفر لديه إنترنت)
+              </h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                اطلب من المريض رمز التذكرة السري (4 أرقام من صورة حجزه) لإثبات كشفه فورياً
+              </p>
+            </div>
+
+            <form onSubmit={handleVerifyOfflinePin} className="flex gap-2 w-full sm:w-auto">
+              <input
+                type="text"
+                maxLength={6}
+                required
+                placeholder="رمز PIN (4 أرقام)"
+                value={inputPin}
+                onChange={(e) => setInputPin(e.target.value)}
+                className="p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono font-black text-center text-amber-300 outline-none w-36 focus:border-amber-400"
+              />
+              <button
+                type="submit"
+                disabled={pinLoading || !inputPin.trim()}
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition flex items-center gap-1 shadow-sm whitespace-nowrap"
+              >
+                {pinLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                تأكيد الحضور
+              </button>
+            </form>
+          </div>
+
+          {pinResult && (
+            <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+              pinResult.type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+            }`}>
+              {pinResult.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+              {pinResult.text}
+            </div>
+          )}
+        </div>
+
+        {/* 1. جدول المواعيد */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
@@ -475,13 +572,13 @@ export default function UnifiedHospitalPortal() {
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-teal-600" /> كشف حجوزات المرضى وتفاصيل الكوبونات
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">يظهر المبلغ الصافي بعد خصم المنصة وتفاصيل الخصومات المعتمدة</p>
+                <p className="text-xs text-slate-400 mt-0.5">يظهر المبلغ الصافي بعد خصم المنصة ورمز PIN لكل مريض</p>
               </div>
 
               <div className="relative w-full sm:w-64">
                 <input
                   type="text"
-                  placeholder="بحث باسم أو هاتف أو كود خصم..."
+                  placeholder="بحث باسم، هاتف، أو PIN..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs outline-none focus:border-teal-500 bg-slate-50"
@@ -503,6 +600,7 @@ export default function UnifiedHospitalPortal() {
                   <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                     <tr>
                       <th className="p-3">المريض</th>
+                      <th className="p-3">رمز PIN</th>
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الطبيب المطلوب</th>
                       <th className="p-3">الموعد والتوقيت</th>
@@ -523,7 +621,8 @@ export default function UnifiedHospitalPortal() {
                         `مرحباً بك أستاذ/ة ${b.patient_name || ''}،\n` +
                         `نؤكد لك استلام وتثبيت موعدك لدى ${facility?.name}:\n` +
                         `* الطبيب: ${b.doctor_name}\n` +
-                        `* الموعد: ${b.booking_date} الساعة ${b.booking_time}\n\n` +
+                        `* الموعد: ${b.booking_date} الساعة ${b.booking_time}\n` +
+                        `🔑 رمز تأكيد حضورك (PIN): ${b.checkin_pin || '---'}\n\n` +
                         `أهلاً وسهلاً بك!`
                       );
                       const waLink = `https://api.whatsapp.com/send?phone=${finalPatientNumber}&text=${replyMsg}`;
@@ -531,6 +630,11 @@ export default function UnifiedHospitalPortal() {
                       return (
                         <tr key={b.id} className="hover:bg-slate-50">
                           <td className="p-3 font-bold text-slate-900">{b.patient_name}</td>
+                          <td className="p-3">
+                            <span className="font-mono font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              {b.checkin_pin || '---'}
+                            </span>
+                          </td>
                           <td className="p-3 font-mono text-slate-600">+967 {cleanPhone}</td>
                           <td className="p-3 text-teal-700 font-bold">{b.doctor_name}</td>
                           <td className="p-3 font-medium text-slate-800">
@@ -612,7 +716,7 @@ export default function UnifiedHospitalPortal() {
           </div>
         )}
 
-        {/* 2. تبويب الفوترة وسداد العمولة */}
+        {/* 2. تبويب الفوترة */}
         {isManager && activeTab === 'billing' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm max-w-3xl mx-auto space-y-6">
             <div className="border-b pb-3 flex justify-between items-center">
@@ -629,7 +733,6 @@ export default function UnifiedHospitalPortal() {
               </span>
             </div>
 
-            {/* بطاقات المؤشرات المالية */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                 <span className="text-xs text-slate-500 block">إجمالي المديونية الحالية:</span>
@@ -648,7 +751,6 @@ export default function UnifiedHospitalPortal() {
               </div>
             </div>
 
-            {/* شريط نسبة استهلاك السقف الائتماني */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-bold">
                 <span className="text-slate-600">نسبة استهلاك السقف الائتماني:</span>
@@ -664,7 +766,6 @@ export default function UnifiedHospitalPortal() {
               </div>
             </div>
 
-            {/* بيانات حسابات المنصة لسداد الفاتورة */}
             <div className="p-5 rounded-2xl bg-teal-50/60 border border-teal-200 space-y-3">
               <h4 className="font-bold text-teal-900 text-sm flex items-center gap-1.5">
                 <Wallet className="w-4 h-4 text-teal-700" /> حسابات المنصة المعتمدة لسداد الفاتورة
@@ -899,7 +1000,6 @@ export default function UnifiedHospitalPortal() {
 
       </div>
 
-      {/* نافذة تعديل الموعد */}
       {editingBooking && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
