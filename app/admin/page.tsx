@@ -187,7 +187,7 @@ export default function SuperAdminDashboard() {
     const totalFacilities = facilities.length;
     const totalUncollectedDebt = facilities.reduce((sum, f) => sum + Number(f.current_debt || 0), 0);
     const completedBookings = bookings.filter(b => b.status === 'completed').length;
-    const totalEarnedRevenue = completedBookings * 1.5; // صافي دخل المنصة بعد الخصومات
+    const totalEarnedRevenue = completedBookings * 1.5;
     return { totalFacilities, totalUncollectedDebt, completedBookings, totalEarnedRevenue };
   }, [facilities, bookings]);
 
@@ -244,7 +244,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      {/* 1. القائمة الجانبية الموحدة الخاصة بصاحب المنصة */}
+      {/* 1. القائمة الجانبية الموحدة */}
       <DashboardSidebar
         role="admin"
         activeTab={activeTab}
@@ -257,9 +257,8 @@ export default function SuperAdminDashboard() {
         }}
       />
 
-      {/* 2. منطقة المحتوى الرئيسية (معدلة لتناسب عرض القائمة الجانبية) */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-8 space-y-6 pt-16 sm:pt-8"
-
+      {/* 2. منطقة المحتوى الرئيسية */}
+      <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-8 space-y-6 pt-16 sm:pt-8">
         
         {/* شريط الإجراءات العلوي */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
@@ -293,7 +292,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* --- تبويب: المؤشرات والنمو (Overview) --- */}
+        {/* المؤشرات والنمو */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -324,7 +323,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* --- تبويب: الفوترة والتحصيل (Billing) --- */}
+        {/* الفوترة والتحصيل */}
         {activeTab === 'billing' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -394,7 +393,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* --- تبويب: تدقيق الإلغاءات (Cancelled Audit) --- */}
+        {/* تدقيق الإلغاءات */}
         {activeTab === 'cancelled_audit' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-rose-700 flex items-center gap-2 border-b pb-3">
@@ -456,7 +455,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* --- تبويب: إدارة المنشآت (Facilities) --- */}
+        {/* دليل المنشآت */}
         {activeTab === 'facilities' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -490,7 +489,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* --- تبويب: سجل الحجوزات (Bookings) --- */}
+        {/* سجل الحجوزات */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -525,7 +524,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* --- تبويب: العروض والكوبونات (Coupons) --- */}
+        {/* الكوبونات */}
         {activeTab === 'coupons' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -543,7 +542,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* --- تبويب: إعدادات المنصة (Settings) --- */}
+        {/* إعدادات المنصة */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4 max-w-xl">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
