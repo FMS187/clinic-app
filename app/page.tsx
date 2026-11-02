@@ -62,10 +62,31 @@ export default function MedicalMarketplace() {
   const [bookingFacility, setBookingFacility] = useState<Facility | null>(null);
 
   // نموذج الحجز
-  const [patientName, setPatientName] = useState('');
-  const [patientPhone, setPatientPhone] = useState('');
-  const [bookingDate, setBookingDate] = useState('');
-  const [bookingTime, setBookingTime] = useState('10:00 صباحاً');
+  <div>
+  <label className="block text-xs font-bold text-slate-700 mb-1">الوقت المتاح</label>
+  <select
+    value={bookingTime}
+    onChange={(e) => setBookingTime(e.target.value)}
+    className="w-full p-2 border border-slate-300 rounded-xl text-xs outline-none bg-white font-bold"
+  >
+    {availableSlots.map(slot => {
+      // فحص هل هذا الوقت محجوز مسبقاً لنفس الطبيب والتاريخ وغير ملغي
+      const isTaken = bookings.some(b => 
+        b.doctor_name === bookingDoctor?.name && 
+        b.booking_date === bookingDate && 
+        b.booking_time === slot &&
+        b.status !== 'cancelled'
+      );
+
+      return (
+        <option key={slot} value={slot} disabled={isTaken} className={isTaken ? 'text-slate-300 bg-slate-100' : 'text-slate-800'}>
+          {slot} {isTaken ? '(محجوز مسبقاً ❌)' : '✅'}
+        </option>
+      );
+    })}
+  </select>
+</div>
+
 
   // خيارات السداد
   const [paymentType, setPaymentType] = useState<'cash' | 'wallet'>('cash');
