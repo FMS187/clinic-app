@@ -181,7 +181,9 @@ export default function MedicalMarketplace() {
         setDiscountAmount(0);
       } else {
         const fee = bookingDoctor?.consultation_fee || 20;
-        const discount = Math.min(fee * 0.15, 2.0);
+// الخصم 15% بحد أقصى $0.50 لضمان بقاء $1.50 صافي ربح للمنصة
+const discount = Math.min(fee * 0.15, 0.50);
+        
         setAppliedCouponCode(cleanCode);
         setDiscountAmount(Number(discount.toFixed(2)));
         setCouponStatusMsg({ type: 'success', text: `تم تفعيل الخصم بنجاح! تم توفير $${discount.toFixed(2)}` });
