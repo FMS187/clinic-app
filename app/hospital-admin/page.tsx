@@ -129,13 +129,19 @@ export default function UnifiedHospitalPortal() {
     '04:30 عصراً', '05:30 مساءً', '06:30 مساءً', '07:30 مساءً'
   ];
 
-  const loadFacilityData = async (currentUser: any) => {
+    const loadFacilityData = async (currentUser: any) => {
     setLoadingData(true);
     try {
-      const role = currentUser.user_metadata?.role;
-      const managerStatus = role !== 'receptionist';
+      const emailLower = (currentUser.email || '').toLowerCase().trim();
+      const metaRole = currentUser.user_metadata?.role;
+
+      // تحديد الرتبة بدقة: إذا كان البريد هو فيصل أو الرتبة مسجلة receptionist
+      const isReceptionist = emailLower === 'faisal.ed88@gmail.com' || metaRole === 'receptionist';
+      const managerStatus = !isReceptionist;
+
       setIsManager(managerStatus);
       setActiveTab(managerStatus ? 'bookings' : 'checkin');
+
 
       let facId = currentUser.user_metadata?.facility_id;
 
