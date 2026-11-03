@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { 
@@ -9,7 +8,7 @@ import {
   Search, Shield, Lock, Stethoscope, Clock, AlertCircle, 
   Loader2, LogOut, Settings, CheckCircle2, Edit3, Check,
   CreditCard, Wallet, AlertTriangle, KeyRound, Sparkles,
-  Users, CheckSquare, Sun, Moon, ArrowRight, Coins
+  Users, CheckSquare, Sun, Moon, ArrowRight, Coins, RefreshCw
 } from 'lucide-react';
 
 interface Facility {
@@ -25,14 +24,7 @@ interface Facility {
   credit_limit?: number;
   current_debt?: number;
   is_suspended?: boolean;
-  wallets_info?: {
-    kuraimi?: string;
-    onecash?: string;
-    floosak?: string;
-    jawali?: string;
-    jaib?: string;
-    cash?: string;
-  };
+  wallets_info?: Record<string, string>;
 }
 
 interface Doctor {
@@ -47,15 +39,29 @@ interface Doctor {
 
 type CurrencyCode = 'USD' | 'YER' | 'SAR';
 
+// قائمة المحافظ الإلكترونية المعتمدة في اليمن
+const YEMEN_WALLETS = [
+  { id: 'kuraimi', name: 'بنك الكريمي (حاسب / حساب)' },
+  { id: 'onecash', name: 'ون كاش (OneCash)' },
+  { id: 'floosak', name: 'فلوسك (بنك اليمن والكويت)' },
+  { id: 'jawali', name: 'جوالي (بنك اليمن والبحرين)' },
+  { id: 'jaib', name: 'جايبي (بنك التضامن)' },
+  { id: 'cashi', name: 'كاش (بنك سبأ الإسلامي)' },
+  { id: 'mobilemoney', name: 'موبايل موني (كاك بنك)' },
+  { id: 'peys', name: 'بيس (بنك الأمل)' },
+  { id: 'mywallet', name: 'محفظتي (بنك اليمن الدولي)' },
+  { id: 'yemencash', name: 'يمن كاش' },
+];
+
 export default function UnifiedHospitalPortal() {
   const [user, setUser] = useState<any>(null);
   const [isManager, setIsManager] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(true);
 
-  // الوضع الليلي / الفاتح
+  // الوضع الليلي
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  // العملة المختارة وأسعار التحويل التقريبية
+  // العملة المختارة
   const [currency, setCurrency] = useState<CurrencyCode>('USD');
   const currencyRates: Record<CurrencyCode, { symbol: string; rate: number }> = {
     USD: { symbol: '$', rate: 1 },
@@ -77,7 +83,6 @@ export default function UnifiedHospitalPortal() {
   const [authError, setAuthError] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  // التبويب النشط
   const [activeTab, setActiveTab] = useState<string>('bookings');
 
   const [facility, setFacility] = useState<Facility | null>(null);
@@ -87,20 +92,15 @@ export default function UnifiedHospitalPortal() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  // خانة التأكيد السريع للأوفلاين عبر رمز PIN
+  // خانة التأكيد السريع للاستقبال فقط
   const [inputPin, setInputPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
   const [pinResult, setPinResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // محافظ المنشأة
-  const [wallets, setWallets] = useState({
-    kuraimi: '',
-    onecash: '',
-    floosak: '',
-    jawali: '',
-    jaib: '',
-    cash: ''
-  });
+  // إدارة المحافظ الديناميكية
+  const [customWallets, setCustomWallets] = useState<Array<{ walletId: string; accountNumber: string }>>([]);
+  const [selectedNewWalletType, setSelectedNewWalletType] = useState('kuraimi');
+  const [newWalletAccountNumber, setNewWalletAccountNumber] = useState('');
   const [savingWallets, setSavingWallets] = useState(false);
   const [walletsSuccess, setWalletsSuccess] = useState(false);
 
@@ -150,15 +150,12 @@ export default function UnifiedHospitalPortal() {
           setFacility(facData);
           setFacPhone(facData.whatsapp_number || '');
           setFacAddress(facData.address || '');
+
           if (facData.wallets_info) {
-            setWallets({
-              kuraimi: facData.wallets_info.kuraimi || '',
-              onecash: facData.wallets_info.onecash || '',
-              floosak: facData.wallets_info.floosak || '',
-              jawali: facData.wallets_info.jawali || '',
-              jaib: facData.wallets_info.jaib || '',
-              cash: facData.wallets_info.cash || ''
-            });
+            const loaded = Object.entries(facData.wallets_info)
+              .filter(([_, num]) => typeof num === 'string' && num.trim() !== '')
+              .map(([walletId, accountNumber]) => ({ walletId, accountNumber: String(accountNumber) }));
+            setCustomWallets(loaded);
           }
         }
 
@@ -218,7 +215,7 @@ export default function UnifiedHospitalPortal() {
     setFacility(null);
   };
 
-  // تأكيد حضور المريض بالرمز السري أوفلاين
+  // تأكيد حضور المريض بالرمز السري (متاح حصراً لموظف الاستقبال)
   const handleVerifyOfflinePin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputPin.trim()) return;
@@ -279,11 +276,37 @@ export default function UnifiedHospitalPortal() {
     }
   };
 
+  // إضافة محفظة جديدة
+  const handleAddCustomWallet = () => {
+    if (!newWalletAccountNumber.trim()) return;
+    const existingIndex = customWallets.findIndex(w => w.walletId === selectedNewWalletType);
+    if (existingIndex >= 0) {
+      const updated = [...customWallets];
+      updated[existingIndex].accountNumber = newWalletAccountNumber.trim();
+      setCustomWallets(updated);
+    } else {
+      setCustomWallets(prev => [...prev, { walletId: selectedNewWalletType, accountNumber: newWalletAccountNumber.trim() }]);
+    }
+    setNewWalletAccountNumber('');
+  };
+
+  // حذف محفظة
+  const handleRemoveWallet = (walletId: string) => {
+    setCustomWallets(prev => prev.filter(w => w.walletId !== walletId));
+  };
+
+  // حفظ المحافظ في قاعدة البيانات
   const handleSaveWallets = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!facility) return;
     setSavingWallets(true);
-    const { error } = await supabase.from('ClinicFacility').update({ wallets_info: wallets }).eq('id', facility.id);
+
+    const walletsObject: Record<string, string> = {};
+    customWallets.forEach(w => {
+      walletsObject[w.walletId] = w.accountNumber;
+    });
+
+    const { error } = await supabase.from('ClinicFacility').update({ wallets_info: walletsObject }).eq('id', facility.id);
     if (!error) {
       setWalletsSuccess(true);
       setTimeout(() => setWalletsSuccess(false), 3000);
@@ -379,12 +402,14 @@ export default function UnifiedHospitalPortal() {
         (b.patient_name || '').toLowerCase().includes(q) || 
         (b.patient_phone || '').includes(q) ||
         (b.doctor_name || '').toLowerCase().includes(q) ||
-        (b.checkin_pin || '').includes(q) ||
         (b.applied_coupon || '').toLowerCase().includes(q)
       );
     }
     return result;
   }, [bookings, todayBookings, activeTab, searchQuery]);
+
+  // التحقق إن كانت الشاشة الحالية هي الشاشة الرئيسية
+  const isAtHomeTab = isManager ? activeTab === 'bookings' : activeTab === 'checkin';
 
   if (loadingAuth) {
     return (
@@ -398,10 +423,7 @@ export default function UnifiedHospitalPortal() {
     return (
       <main className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-900'}`}>
         <div className="bg-slate-800 border border-slate-700 w-full max-w-md p-8 rounded-3xl shadow-2xl text-center">
-          <div className="flex justify-between items-center mb-4">
-            <Link href="/" className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white transition">
-              <ArrowRight className="w-4 h-4" /> العودة للرئيسية
-            </Link>
+          <div className="flex justify-end mb-4">
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="p-2 rounded-xl bg-slate-700/60 text-slate-300 hover:text-white transition"
@@ -467,7 +489,8 @@ export default function UnifiedHospitalPortal() {
 
   return (
     <div className={`min-h-screen flex transition-colors duration-300 ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
-      {/* 1. القائمة الجانبية الذكية */}
+      
+      {/* 1. القائمة الجانبية الذكية بحسب الرتبة */}
       <DashboardSidebar
         role={isManager ? 'facility_manager' : 'receptionist'}
         activeTab={activeTab}
@@ -477,25 +500,30 @@ export default function UnifiedHospitalPortal() {
         onLogout={handleSignOut}
         badgeCounts={{
           pendingBookings: bookings.filter(b => b.status === 'pending').length,
-          uncollectedDebt: currentDebt
+          uncollectedDebt: isManager ? currentDebt : undefined
         }}
       />
 
       {/* 2. منطقة المحتوى */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-8 space-y-6 pt-16 sm:pt-8">
         
-        {/* شريط التحكم العلوي المدمج: زر الرجوع + محول العملات + الوضع الداكن */}
+        {/* شريط التحكم العلوي: زر الرجوع للرئيسية الداخلية + العملة + المظهر */}
         <div className={`p-4 rounded-3xl border shadow-sm flex flex-wrap justify-between items-center gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <div className="flex items-center gap-2">
-            <Link
-              href="/"
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs font-bold transition border ${
-                isDarkMode ? 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              <ArrowRight className="w-4 h-4 text-teal-600" />
-              الرجوع للرئيسية
-            </Link>
+            {!isAtHomeTab && (
+              <button
+                onClick={() => setActiveTab(isManager ? 'bookings' : 'checkin')}
+                className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs font-bold transition border ${
+                  isDarkMode ? 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <ArrowRight className="w-4 h-4 text-teal-600" />
+                الرجوع للرئيسية
+              </button>
+            )}
+            <span className="text-xs font-bold text-slate-400">
+              {isManager ? 'لوحة تحكم إدارة المنشأة' : 'شاشة موظف الاستقبال'}
+            </span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -514,7 +542,7 @@ export default function UnifiedHospitalPortal() {
               </select>
             </div>
 
-            {/* زر الوضع المظلم / الفاتح */}
+            {/* الوضع المظلم / الفاتح */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className={`p-2.5 rounded-2xl border transition flex items-center justify-center ${
@@ -527,21 +555,19 @@ export default function UnifiedHospitalPortal() {
           </div>
         </div>
 
-        {/* تنبيه السقف الائتماني */}
-        {isSuspended && (
+        {/* تنبيه السقف الائتماني (يظهر فقط للمدير) */}
+        {isManager && isSuspended && (
           <div className="bg-rose-50 border-2 border-rose-300 p-4 rounded-2xl flex items-center gap-3 text-rose-900 text-xs sm:text-sm shadow-sm">
             <AlertTriangle className="w-6 h-6 text-rose-600 flex-shrink-0" />
             <div className="flex-grow">
               <strong>تم تعليق استقبال الحجوزات مؤقتاً:</strong> وصلت مديونية عمولات الحجوزات النقدية إلى السقف الائتماني ({formatMoney(creditLimit)}). يرجى تسوية الفاتورة لإعادة التفعيل الفوري.
             </div>
-            {isManager && (
-              <button 
-                onClick={() => setActiveTab('billing')}
-                className="px-3.5 py-1.5 bg-rose-600 text-white font-bold rounded-xl whitespace-nowrap hover:bg-rose-700 transition"
-              >
-                سداد الفاتورة
-              </button>
-            )}
+            <button 
+              onClick={() => setActiveTab('billing')}
+              className="px-3.5 py-1.5 bg-rose-600 text-white font-bold rounded-xl whitespace-nowrap hover:bg-rose-700 transition"
+            >
+              سداد الفاتورة
+            </button>
           </div>
         )}
 
@@ -564,14 +590,16 @@ export default function UnifiedHospitalPortal() {
           </span>
         </header>
 
-        {/* خانة التأكيد السريع للأوفلاين */}
-        {(!isManager || activeTab === 'checkin' || activeTab === 'bookings') && (
+        {/* ------------------------------------------------------------- */}
+        {/* خانة التأكيد السريع للأوفلاين (تظهر حصراً لموظف الاستقبال فقط) */}
+        {/* ------------------------------------------------------------- */}
+        {!isManager && (
           <section className={`border-2 border-amber-400/80 p-5 rounded-3xl shadow-sm space-y-3 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
                 <h2 className={`text-base font-black flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   <KeyRound className="w-5 h-5 text-amber-500" />
-                  تأكيد حضور المريض بالرمز السري (بدون إنترنت للمريض)
+                  تأكيد حضور المريض بالرمز السري
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   اطلب من المريض رمز الـ PIN المكون من 4 أرقام الموجود في تذكرة حجزه لإثبات الكشف وتأكيد الموعد فوراً.
@@ -612,7 +640,7 @@ export default function UnifiedHospitalPortal() {
           </section>
         )}
 
-        {/* جدول المواعيد */}
+        {/* جدول المواعيد (تم حذف رمز PIN منه نهائياً لمنع التلاعب) */}
         {(activeTab === 'bookings' || activeTab === 'today_bookings' || activeTab === 'all_bookings') && (
           <div className={`p-6 rounded-3xl border shadow-sm space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
             <div className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
@@ -627,7 +655,7 @@ export default function UnifiedHospitalPortal() {
               <div className="relative w-full sm:w-64">
                 <input
                   type="text"
-                  placeholder="بحث باسم، هاتف، أو PIN..."
+                  placeholder="بحث باسم المريض أو هاتفه..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className={`w-full pl-8 pr-3 py-1.5 border rounded-xl text-xs outline-none focus:border-teal-500 ${
@@ -651,7 +679,6 @@ export default function UnifiedHospitalPortal() {
                   <thead className={`border-b ${isDarkMode ? 'bg-slate-950/60 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
                     <tr>
                       <th className="p-3">المريض</th>
-                      <th className="p-3">رمز PIN</th>
                       <th className="p-3">الهاتف</th>
                       <th className="p-3">الطبيب المطلوب</th>
                       <th className="p-3">الموعد والتوقيت</th>
@@ -672,8 +699,7 @@ export default function UnifiedHospitalPortal() {
                         `مرحباً بك أستاذ/ة ${b.patient_name || ''}،\n` +
                         `نؤكد لك استلام وتثبيت موعدك لدى ${facility?.name}:\n` +
                         `* الطبيب: ${b.doctor_name}\n` +
-                        `* الموعد: ${b.booking_date} الساعة ${b.booking_time}\n` +
-                        `🔑 رمز تأكيد حضورك (PIN): ${b.checkin_pin || '---'}\n\n` +
+                        `* الموعد: ${b.booking_date} الساعة ${b.booking_time}\n\n` +
                         `أهلاً وسهلاً بك!`
                       );
                       const waLink = `https://api.whatsapp.com/send?phone=${finalPatientNumber}&text=${replyMsg}`;
@@ -681,11 +707,6 @@ export default function UnifiedHospitalPortal() {
                       return (
                         <tr key={b.id} className={isDarkMode ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
                           <td className={`p-3 font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{b.patient_name}</td>
-                          <td className="p-3">
-                            <span className="font-mono font-black text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
-                              {b.checkin_pin || '---'}
-                            </span>
-                          </td>
                           <td className="p-3 font-mono text-slate-400">+967 {cleanPhone}</td>
                           <td className="p-3 text-teal-500 font-bold">{b.doctor_name}</td>
                           <td className="p-3 font-medium">
@@ -847,63 +868,96 @@ export default function UnifiedHospitalPortal() {
           </div>
         )}
 
-        {/* تبويب المحافظ (خاص بالمدير) */}
+        {/* ------------------------------------------------------------- */}
+        {/* تبويب المحافظ الديناميكية (خاص بالمدير: إضافة وحذف جميع المحافظ) */}
+        {/* ------------------------------------------------------------- */}
         {isManager && activeTab === 'wallets' && (
           <div className={`p-6 rounded-3xl border shadow-sm max-w-2xl mx-auto space-y-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
             <div className={`border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
               <h2 className={`text-lg font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 <Wallet className="w-5 h-5 text-teal-600" /> إدارة حسابات المحافظ الإلكترونية اليمنية
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">أدخل أرقام الحسابات التي تدعمها المنشأة لسداد عربون المريض</p>
+              <p className="text-xs text-slate-400 mt-0.5">أضف أو احذف المحافظ التي تمتلكها المنشأة لاستقبال عربون المرضى</p>
             </div>
 
-            <form onSubmit={handleSaveWallets} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className={`p-3.5 rounded-2xl border space-y-1.5 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                  <label className="block text-xs font-bold">🏦 بنك الكريمي (حاسب / رقم الحساب)</label>
-                  <input
-                    type="text"
-                    placeholder="رقم الحساب أو خدمة حاسب"
-                    value={wallets.kuraimi}
-                    onChange={(e) => setWallets({ ...wallets, kuraimi: e.target.value })}
-                    className={`w-full p-2.5 border rounded-xl text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
-                  />
+            {/* نموذج إضافة محفظة جديدة */}
+            <div className={`p-4 rounded-2xl border space-y-3 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <span className="text-xs font-bold block text-teal-500">إضافة محفظة أو حساب جديد:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold mb-1">اختر المحفظة البنكية</label>
+                  <select
+                    value={selectedNewWalletType}
+                    onChange={(e) => setSelectedNewWalletType(e.target.value)}
+                    className={`w-full p-2.5 border rounded-xl text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
+                  >
+                    {YEMEN_WALLETS.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
                 </div>
-                <div className={`p-3.5 rounded-2xl border space-y-1.5 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                  <label className="block text-xs font-bold">🟢 ون كاش (OneCash)</label>
+
+                <div>
+                  <label className="block text-[11px] font-bold mb-1">رقم الحساب / الهاتف</label>
                   <input
                     type="text"
-                    placeholder="رقم هاتف المحفظة"
-                    value={wallets.onecash}
-                    onChange={(e) => setWallets({ ...wallets, onecash: e.target.value })}
-                    className={`w-full p-2.5 border rounded-xl text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
-                  />
-                </div>
-                <div className={`p-3.5 rounded-2xl border space-y-1.5 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                  <label className="block text-xs font-bold">🔵 فلوسك (بنك اليمن والكويت)</label>
-                  <input
-                    type="text"
-                    placeholder="رقم محفظة فلوسك"
-                    value={wallets.floosak}
-                    onChange={(e) => setWallets({ ...wallets, floosak: e.target.value })}
-                    className={`w-full p-2.5 border rounded-xl text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
-                  />
-                </div>
-                <div className={`p-3.5 rounded-2xl border space-y-1.5 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                  <label className="block text-xs font-bold">🟣 جوالي (بنك اليمن والبحرين)</label>
-                  <input
-                    type="text"
-                    placeholder="رقم محفظة جوالي"
-                    value={wallets.jawali}
-                    onChange={(e) => setWallets({ ...wallets, jawali: e.target.value })}
+                    placeholder="أدخل رقم الحساب أو المحفظة"
+                    value={newWalletAccountNumber}
+                    onChange={(e) => setNewWalletAccountNumber(e.target.value)}
                     className={`w-full p-2.5 border rounded-xl text-xs outline-none font-mono ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300'}`}
                   />
                 </div>
               </div>
 
+              <button
+                type="button"
+                onClick={handleAddCustomWallet}
+                disabled={!newWalletAccountNumber.trim()}
+                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5"
+              >
+                <Plus className="w-4 h-4 text-teal-400" /> إدراج في قائمة محافظ المنشأة
+              </button>
+            </div>
+
+            {/* قائمة المحافظ المضافة حالياً مع زر الحذف */}
+            <form onSubmit={handleSaveWallets} className="space-y-4">
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-slate-400 block">المحافظ المعتمدة حالياً لدى منشأتكم ({customWallets.length}):</span>
+                {customWallets.length === 0 ? (
+                  <p className="text-center py-6 text-xs text-slate-400 bg-slate-950/20 rounded-2xl border border-dashed border-slate-700">
+                    لم تقم بإضافة أي محفظة حتى الآن. أضف حساباً لتسهيل دفع المرضى.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {customWallets.map(w => {
+                      const walletMeta = YEMEN_WALLETS.find(y => y.id === w.walletId) || { name: w.walletId };
+                      return (
+                        <div
+                          key={w.walletId}
+                          className={`p-3 rounded-2xl border flex justify-between items-center ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200'}`}
+                        >
+                          <div>
+                            <span className="text-[11px] font-bold block">{walletMeta.name}</span>
+                            <span className="text-xs font-mono font-black text-teal-500">{w.accountNumber}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveWallet(w.walletId)}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 transition"
+                            title="حذف هذه المحفظة"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {walletsSuccess && (
                 <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" /> تم حفظ بيانات المحافظ بنجاح!
+                  <CheckCircle2 className="w-4 h-4" /> تم حفظ ونشر المحافظ بنجاح!
                 </div>
               )}
 
@@ -912,7 +966,7 @@ export default function UnifiedHospitalPortal() {
                 disabled={savingWallets}
                 className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-sm transition"
               >
-                {savingWallets ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'حفظ المحافظ'}
+                {savingWallets ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'حفظ وتثبيت التغييرات'}
               </button>
             </form>
           </div>
