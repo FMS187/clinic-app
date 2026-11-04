@@ -58,7 +58,7 @@ export default function ReceptionPinTab({
   formatMoney
 }: ReceptionPinTabProps) {
   // جلسة وردية موظف الاستقبال الحالي
-  const [activeStaff, setActiveStaff] = useState<StaffMember | null>(null);
+  const [activeStaff, setActiveStaff] = useState<StaffMember | null>(staffList[0] || null);
   const [loginStaffPin, setLoginStaffPin] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [loginError, setLoginError] = useState('');
