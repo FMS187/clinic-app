@@ -235,9 +235,34 @@ export default function HospitalAdminPage() {
             </button>
           </div>
 
-          <nav className="space-y-1">
+                     <nav className="space-y-1">
+            {/* رابط شاشة الاستقبال المستقلة */}
+            <a
+              href="/hospital-reception"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 mb-2"
+            >
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4" />
+                <span>شاشة الاستقبال - رابط مستقل</span>
+              </div>
+              <span className="text-[10px] bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded font-black">↗</span>
+            </a>
+
             {isManager ? (
               <>
+                <button
+                  onClick={() => { setActiveTab('staff'); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
+                    activeTab === 'staff' ? 'bg-teal-600 text-white' : 'hover:bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>حسابات موظفي الاستقبال PIN</span>
+                </button>
+
+
                 <button
                   onClick={() => { setActiveTab('bookings'); setIsSidebarOpen(false); }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
