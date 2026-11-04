@@ -1,27 +1,3 @@
-      {/* بطاقة الرابط المخصص للمنشأة */}
-      <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h3 className="font-bold text-xs text-amber-400 flex items-center gap-1.5">
-            <KeyRound className="w-4 h-4" />
-            الرابط المخصص لشباك استقبال هذه المنشأة
-          </h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            انسخ هذا الرابط وافتحه على أجهزة الاستقبال؛ يُثبت المنشأة تلقائياً ويطلب PIN الموظف فقط
-          </p>
-        </div>
-
-        <button
-          onClick={() => {
-            const url = `${window.location.origin}/hospital-reception?facility_id=${facilityId}`;
-            navigator.clipboard.writeText(url);
-            alert('تم نسخ رابط الاستقبال المخصص بنجاح!');
-          }}
-          className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap"
-        >
-          نسخ الرابط المخصص 📋
-        </button>
-      </div>
-
 'use client';
 
 import React, { useState } from 'react';
@@ -118,7 +94,31 @@ export default function StaffManagementTab({
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      
+            {/* بطاقة الرابط المخصص للمنشأة */}
+      <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <h3 className="font-bold text-xs text-amber-400 flex items-center gap-1.5">
+            <KeyRound className="w-4 h-4" />
+            الرابط المخصص لشباك استقبال هذه المنشأة
+          </h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            انسخ هذا الرابط وافتحه على أجهزة الاستقبال؛ يُثبت المنشأة تلقائياً ويطلب PIN الموظف فقط
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const url = `${window.location.origin}/hospital-reception?facility_id=${facilityId}`;
+            navigator.clipboard.writeText(url);
+            alert('تم نسخ رابط الاستقبال المخصص بنجاح!');
+          }}
+          className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap"
+        >
+          نسخ الرابط المخصص 📋
+        </button>
+      </div>
+
       {/* بطاقة إضافة موظف جديد */}
       <section className={`p-6 rounded-3xl border shadow-sm space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div className={`border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
