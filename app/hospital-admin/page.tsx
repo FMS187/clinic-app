@@ -218,10 +218,19 @@ export default function HospitalAdminPage() {
   return (
     <div className={`min-h-screen flex ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
       
+            {/* خلفية معتمة للجوال عند فتح القائمة */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)} 
+          className="fixed inset-0 bg-black/60 z-30 lg:hidden backdrop-blur-xs transition-opacity"
+        />
+      )}
+
       {/* القائمة الجانبية (Sidebar) */}
-      <aside className={`fixed inset-y-0 right-0 z-40 w-64 border-l transition-transform transform ${
-        isSidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+      <aside className={`fixed inset-y-0 right-0 z-40 w-64 border-l transition-transform duration-300 ease-in-out ${
+        isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full lg:translate-x-0'
       } ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} flex flex-col justify-between p-4`}>
+
         
         <div className="space-y-6">
           <div className="flex justify-between items-center border-b pb-4">
@@ -327,16 +336,22 @@ export default function HospitalAdminPage() {
 
       </aside>
 
-      {/* المحتوى الرئيسي للمنظومة */}
-      <main className="flex-1 lg:mr-64 p-4 sm:p-6 lg:p-8 space-y-6">
+            {/* المحتوى الرئيسي للمنظومة */}
+      <main className="flex-1 w-full min-w-0 overflow-x-hidden lg:mr-64 p-3 sm:p-6 space-y-4 sm:space-y-6">
+
         
         {/* الشريط العلوي العام */}
         <header className={`p-4 rounded-3xl border flex justify-between items-center ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-400 hover:text-white">
-              <Menu className="w-6 h-6" />
+                    <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsSidebarOpen(prev => !prev)} 
+              className={`p-2 rounded-xl border lg:hidden transition ${isDarkMode ? 'bg-slate-800 border-slate-700 text-teal-400' : 'bg-slate-100 border-slate-200 text-slate-700'}`}
+              aria-label="القائمة"
+            >
+              <Menu className="w-5 h-5" />
             </button>
-            <h1 className="text-base font-black flex items-center gap-2">
+            <h1 className="text-sm sm:text-base font-black flex items-center gap-1.5 truncate">
+
               <Building2 className="w-5 h-5 text-teal-600" />
               {facility?.name || 'بوابة إدارة المنشأة'}
             </h1>
