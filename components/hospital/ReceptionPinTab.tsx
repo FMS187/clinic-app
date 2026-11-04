@@ -131,7 +131,7 @@ export default function ReceptionPinTab({
     };
   }, [facilityId, setBookings]);
 
-  // التحقق من رمز PIN وحساب الخصم الصافي
+    // التحقق من رمز PIN وحساب الخصم الصافي
   const handleVerifyPin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputPin.trim()) return;
@@ -160,23 +160,15 @@ export default function ReceptionPinTab({
             text: `تم تأكيد هذا الحجز مسبقاً للمريض (${booking.patient_name}). لا يمكن إعادة التحقق.` 
           });
         } else {
-          let activeCoupon = booking.applied_coupon || booking.discount_coupon;
-          if (!activeCoupon) {
-            activeCoupon = `CARE-${Math.floor(1000 + Math.random() * 9000)}`;
-          }
-
+          const couponName = booking.applied_coupon || booking.discount_coupon || 'بدون كوبون';
           const originalFee = Number(booking.consultation_fee) || 20;
           const discountVal = Number(booking.discount_amount) || 0;
           const netToCollect = Math.max(0, originalFee - discountVal);
 
+          // تحديث الحالة فقط لضمان عدم حدوث تعارض في الأعمدة
           const { error: updateErr } = await supabase
             .from('Booking')
-            .update({
-              status: 'completed',
-              verified_by_patient: true,
-              discount_coupon: activeCoupon,
-              verified_by: currentUserEmail
-            })
+            .update({ status: 'completed' })
             .eq('id', booking.id);
 
           if (!updateErr) {
@@ -188,13 +180,13 @@ export default function ReceptionPinTab({
                 doctor: booking.doctor_name,
                 originalFee,
                 discount: discountVal,
-                coupon: activeCoupon,
+                coupon: couponName,
                 netToCollect
               }
             });
             setInputPin('');
           } else {
-            setPinResult({ type: 'error', text: 'تعذر توثيق الحضور، يرجى المحاولة مرة أخرى.' });
+            setPinResult({ type: 'error', text: `خطأ أثناء الحفظ: ${updateErr.message}` });
           }
         }
       }
@@ -203,6 +195,7 @@ export default function ReceptionPinTab({
     }
     setPinLoading(false);
   };
+
 
   // تسجيل موعد حضوري مباشر
   const handleCreateNewBooking = async (e: React.FormEvent) => {
@@ -230,6 +223,8 @@ export default function ReceptionPinTab({
     if (data && !error) {
       setBookings(prev => [data[0], ...prev]);
       setShowNewBookingModal(false);
+      setInputPin(generatedPin);
+
       setNewBookingData({
         patient_name: '',
         patient_phone: '',
