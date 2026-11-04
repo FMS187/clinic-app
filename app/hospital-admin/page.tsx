@@ -399,15 +399,17 @@ export default function HospitalAdminPage() {
               />
             )}
 
-            {/* 2. الدوام وإجازات الأطباء */}
+                        {/* 2. الدوام وإجازات الأطباء */}
             {activeTab === 'schedule' && isManager && (
               <ScheduleSettingsTab
                 facilityId={facility?.id || ''}
+                initialData={facility?.wallets_info}
                 doctors={doctors}
                 setDoctors={setDoctors}
                 isDarkMode={isDarkMode}
               />
             )}
+
 
             {/* 3. الفوترة والعمولات */}
             {activeTab === 'billing' && isManager && (
