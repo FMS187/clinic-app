@@ -157,19 +157,19 @@ export default function ReceptionPinTab({
           const netToCollect = Math.max(0, originalFee - discountVal);
 
           // توثيق العملية باسم موظف الاستقبال المباشر
-          const { error: updateErr } = await supabase
+                    const { error: updateErr } = await supabase
             .from('Booking')
             .update({ 
-              status: 'completed',
-              receptionist_name: activeStaff?.name || 'الاستقبال العام'
+              status: 'completed'
             })
             .eq('id', booking.id);
+
 
           if (!updateErr) {
             setBookings(prev => prev.map(b => b.id === booking.id ? { 
               ...b, 
               status: 'completed',
-              receptionist_name: activeStaff?.name || 'الاستقبال العام'
+              
             } : b));
 
             setPinResult({
