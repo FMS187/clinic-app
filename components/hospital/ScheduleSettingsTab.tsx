@@ -233,7 +233,8 @@ export default function ScheduleSettingsTab({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {doctors.map(doc => {
-            const isPaused = doc.is_available === false || doc.status === 'on_leave';
+            const isPaused = (doc.specialty || '').includes('[إجازة مؤقتة]');
+
             const isUpdating = updatingDoctorId === doc.id;
 
             return (
