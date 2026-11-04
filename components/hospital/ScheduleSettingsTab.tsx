@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Clock, UserX, CheckCircle2, Loader2, Save, Phone, AlertCircle } from 'lucide-react';
 
@@ -8,8 +8,6 @@ interface Doctor {
   id: string | number;
   name: string;
   specialty: string;
-  is_available?: boolean;
-  status?: string;
 }
 
 interface ScheduleSettingsTabProps {
@@ -42,7 +40,7 @@ export default function ScheduleSettingsTab({
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleSuccess, setScheduleSuccess] = useState(false);
 
-  // أرقام التواصل الخاصة بالمنشأة
+  // أرقام التواصل
   const [phoneNumbers, setPhoneNumbers] = useState({
     main_phone: '',
     whatsapp_phone: '',
@@ -51,14 +49,43 @@ export default function ScheduleSettingsTab({
   const [savingPhones, setSavingPhones] = useState(false);
   const [phoneSuccess, setPhoneSuccess] = useState(false);
 
-  // حالة إجازات الأطباء
+  // حالة إيقاف مواعيد الأطباء
   const [updatingDoctorId, setUpdatingDoctorId] = useState<string | number | null>(null);
   const [doctorMsg, setDoctorMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // جلب البيانات المحفوظة مسبقاً عند فتح الصفحة
+  useEffect(() => {
+    const fetchExistingSettings = async () => {
+      if (!facilityId) return;
+      const { data } = await supabase.from('ClinicFacility').select('wallets_info').eq('id', facilityId).single();
+      if (data?.wallets_info) {
+        if (data.wallets_info.contact_numbers) {
+          setPhoneNumbers(data.wallets_info.contact_numbers);
+        }
+        if (data.wallets_info.working_hours_info) {
+          const wh = data.wallets_info.working_hours_info;
+          if (wh.work_days) setActiveDays(wh.work_days);
+          if (wh.morning_shift) setMorningShift(wh.morning_shift);
+          if (wh.evening_shift) setEveningShift(wh.evening_shift);
+        }
+      }
+    };
+    fetchExistingSettings();
+  }, [facilityId]);
 
   const toggleDay = (dayId: string) => {
     setActiveDays(prev => 
       prev.includes(dayId) ? prev.filter(d => d !== dayId) : [...prev, dayId]
     );
+  };
+
+  // دالة مساعدة للحفظ داخل wallets_info المضمون في قاعدة البيانات
+  const updateSettingsInStorage = async (newKey: string, newValue: any) => {
+    const { data: currentFac } = await supabase.from('ClinicFacility').select('wallets_info').eq('id', facilityId).single();
+    const existing = currentFac?.wallets_info || {};
+    const updated = { ...existing, [newKey]: newValue };
+
+    return await supabase.from('ClinicFacility').update({ wallets_info: updated }).eq('id', facilityId);
   };
 
   // حفظ الدوام
@@ -73,16 +100,13 @@ export default function ScheduleSettingsTab({
       evening_shift: eveningShift
     };
 
-    const { error } = await supabase
-      .from('ClinicFacility')
-      .update({ working_hours_info: scheduleData })
-      .eq('id', facilityId);
+    const { error } = await updateSettingsInStorage('working_hours_info', scheduleData);
 
     if (!error) {
       setScheduleSuccess(true);
       setTimeout(() => setScheduleSuccess(false), 3000);
     } else {
-      alert(`خطأ أثناء الحفظ: ${error.message}`);
+      alert(`خطأ: ${error.message}`);
     }
     setSavingSchedule(false);
   };
@@ -93,10 +117,7 @@ export default function ScheduleSettingsTab({
     if (!facilityId) return;
     setSavingPhones(true);
 
-    const { error } = await supabase
-      .from('ClinicFacility')
-      .update({ contact_numbers: phoneNumbers })
-      .eq('id', facilityId);
+    const { error } = await updateSettingsInStorage('contact_numbers', phoneNumbers);
 
     if (!error) {
       setPhoneSuccess(true);
@@ -107,7 +128,7 @@ export default function ScheduleSettingsTab({
     setSavingPhones(false);
   };
 
-    // إيقاف أو تفعيل مواعيد الطبيب بالاعتماد على الأعمدة الأساسية المضمونة
+  // إيقاف أو تفعيل مواعيد الطبيب عبر تعديل التخصص المضمون
   const handleToggleDoctorAvailability = async (doc: Doctor, setPaused: boolean) => {
     setUpdatingDoctorId(doc.id);
     setDoctorMsg(null);
@@ -143,11 +164,10 @@ export default function ScheduleSettingsTab({
     setTimeout(() => setDoctorMsg(null), 4000);
   };
 
-
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       
-      {/* 1. خانة أرقام التواصل الخاصة بالمنشأة */}
+      {/* 1. أرقام التواصل */}
       <div className={`p-6 rounded-3xl border shadow-sm space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div className={`border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           <h2 className={`text-base font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -195,7 +215,7 @@ export default function ScheduleSettingsTab({
 
           {phoneSuccess && (
             <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" /> تم حفظ أرقام التواصل بنجاح!
+              <CheckCircle2 className="w-4 h-4" /> تم حفظ وتثبيت أرقام التواصل بنجاح!
             </div>
           )}
 
@@ -234,7 +254,6 @@ export default function ScheduleSettingsTab({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {doctors.map(doc => {
             const isPaused = (doc.specialty || '').includes('[إجازة مؤقتة]');
-
             const isUpdating = updatingDoctorId === doc.id;
 
             return (
@@ -255,7 +274,9 @@ export default function ScheduleSettingsTab({
                       {isPaused ? 'المواعيد متوقفة' : 'متاح للحجز'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400">{doc.specialty}</p>
+                  <p className="text-xs text-slate-400">
+                    {(doc.specialty || '').replace('[إجازة مؤقتة]', '').trim()}
+                  </p>
                 </div>
 
                 <div className="pt-2 border-t border-slate-700/20">
@@ -285,7 +306,7 @@ export default function ScheduleSettingsTab({
         </div>
       </div>
 
-      {/* 3. أيام وساعات دوام المنشأة */}
+      {/* 3. أيام وساعات الدوام */}
       <div className={`p-6 rounded-3xl border shadow-sm space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div className={`border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           <h2 className={`text-base font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -370,7 +391,7 @@ export default function ScheduleSettingsTab({
 
           {scheduleSuccess && (
             <div className="p-3 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" /> تم تحديث ساعات الدوام بنجاح!
+              <CheckCircle2 className="w-4 h-4" /> تم حفظ وتحديث ساعات الدوام بنجاح!
             </div>
           )}
 
@@ -380,11 +401,3 @@ export default function ScheduleSettingsTab({
             className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5"
           >
             {savingSchedule ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            حفظ إعدادات الدوام
-          </button>
-        </form>
-      </div>
-
-    </div>
-  );
-}
