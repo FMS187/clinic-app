@@ -107,21 +107,28 @@ export default function ScheduleSettingsTab({
     setSavingPhones(false);
   };
 
-  // إيقاف أو تفعيل مواعيد الطبيب
+    // إيقاف أو تفعيل مواعيد الطبيب بالاعتماد على الأعمدة الأساسية المضمونة
   const handleToggleDoctorAvailability = async (doc: Doctor, setPaused: boolean) => {
     setUpdatingDoctorId(doc.id);
     setDoctorMsg(null);
 
-    // نحدث عمود is_available أو status
-    const updatePayload = { is_available: !setPaused, status: setPaused ? 'on_leave' : 'active' };
+    let updatedSpecialty = doc.specialty || '';
+
+    if (setPaused) {
+      if (!updatedSpecialty.includes('[إجازة مؤقتة]')) {
+        updatedSpecialty = `${updatedSpecialty.trim()} [إجازة مؤقتة]`;
+      }
+    } else {
+      updatedSpecialty = updatedSpecialty.replace('[إجازة مؤقتة]', '').trim();
+    }
 
     const { error } = await supabase
       .from('Doctor')
-      .update(updatePayload)
+      .update({ specialty: updatedSpecialty })
       .eq('id', doc.id);
 
     if (!error) {
-      setDoctors(prev => prev.map(d => d.id === doc.id ? { ...d, ...updatePayload } : d));
+      setDoctors(prev => prev.map(d => d.id === doc.id ? { ...d, specialty: updatedSpecialty } : d));
       setDoctorMsg({
         type: 'success',
         text: setPaused 
@@ -131,9 +138,11 @@ export default function ScheduleSettingsTab({
     } else {
       setDoctorMsg({ type: 'error', text: `فشل التعديل: ${error.message}` });
     }
+
     setUpdatingDoctorId(null);
     setTimeout(() => setDoctorMsg(null), 4000);
   };
+
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
