@@ -214,7 +214,7 @@ export default function ReceptionPinTab({
       checkin_pin: generatedPin,
       deposit_amount: 20,
       payment_method: 'cash',
-      receptionist_name: activeStaff?.name || 'الاستقبال'
+      
     };
 
     const { data, error } = await supabase.from('Booking').insert([newRecord]).select();
