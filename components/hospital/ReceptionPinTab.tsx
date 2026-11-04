@@ -4,8 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { 
   KeyRound, Check, Loader2, CheckCircle2, AlertCircle, 
-  Calendar, Phone, Clock, Edit3, UserPlus, Lock, HeadphonesIcon, X, Bell, Tag
+  Calendar, Phone, Clock, Edit3, UserPlus, Lock, HeadphonesIcon, X, Tag, UserCheck, LogOut
 } from 'lucide-react';
+import { StaffMember } from './StaffManagementTab';
 
 export interface DoctorOption {
   id: string | number;
@@ -27,6 +28,7 @@ export interface ReceptionBooking {
   applied_coupon?: string;
   discount_coupon?: string;
   checkin_pin?: string;
+  receptionist_name?: string;
 }
 
 interface ReceptionPinTabProps {
@@ -35,9 +37,9 @@ interface ReceptionPinTabProps {
   doctors?: DoctorOption[];
   bookings: ReceptionBooking[];
   setBookings: React.Dispatch<React.SetStateAction<ReceptionBooking[]>>;
+  staffList?: StaffMember[];
   isDarkMode: boolean;
   formatMoney: (amountInUsd: number) => string;
-  currentUserEmail?: string;
 }
 
 const AVAILABLE_TIMES = [
@@ -51,16 +53,22 @@ export default function ReceptionPinTab({
   doctors = [],
   bookings,
   setBookings,
+  staffList = [],
   isDarkMode,
   formatMoney
 }: ReceptionPinTabProps) {
+  // جلسة وردية موظف الاستقبال الحالي
+  const [activeStaff, setActiveStaff] = useState<StaffMember | null>(null);
+  const [loginStaffPin, setLoginStaffPin] = useState('');
+  const [selectedStaffId, setSelectedStaffId] = useState<string>('');
+  const [loginError, setLoginError] = useState('');
+
+  // خانة تأكيد PIN المريض
   const [inputPin, setInputPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
   const [pinResult, setPinResult] = useState<{ type: 'success' | 'error'; text: string; details?: any } | null>(null);
 
-  const [newBookingAlert, setNewBookingAlert] = useState<string | null>(null);
-
-  // تسجيل موعد جديد
+  // نافذة تسجيل موعد جديد
   const [showNewBookingModal, setShowNewBookingModal] = useState(false);
   const [newBookingData, setNewBookingData] = useState({
     patient_name: '',
@@ -83,7 +91,40 @@ export default function ReceptionPinTab({
     return bookings.filter(b => b.booking_date === todayStr);
   }, [bookings, todayStr]);
 
-  // التحقق من رمز PIN وإظهار تفاصيل الكوبون
+  // إجمالي المبالغ التي جمعها الموظف الحالي في ورديته اليوم
+  const staffCollectedToday = useMemo(() => {
+    if (!activeStaff) return 0;
+    return todayBookings
+      .filter(b => b.status === 'completed' && b.receptionist_name === activeStaff.name)
+      .reduce((sum, b) => sum + (b.deposit_amount || 20), 0);
+  }, [todayBookings, activeStaff]);
+
+  // تسجيل دخول موظف الاستقبال بـ PIN الخاص به
+  const handleStaffLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+
+    const member = staffList.find(s => s.id === selectedStaffId);
+    if (!member) {
+      setLoginError('يرجى اختيار اسم الموظف من القائمة.');
+      return;
+    }
+
+    if (!member.is_active) {
+      setLoginError('هذا الحساب معطل مؤقتاً، يرجى مراجعة إدارة المنشأة.');
+      return;
+    }
+
+    if (member.pin_code !== loginStaffPin.trim()) {
+      setLoginError('الرمز السري غير صحيح. يرجى التأكد وإعادة المحاولة.');
+      return;
+    }
+
+    setActiveStaff(member);
+    setLoginStaffPin('');
+  };
+
+  // التحقق من تذكرة المريض بالـ PIN
   const handleVerifyPin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputPin.trim()) return;
@@ -95,9 +136,7 @@ export default function ReceptionPinTab({
 
     try {
       let query = supabase.from('Booking').select('*').eq('checkin_pin', targetPin);
-      if (facilityId) {
-        query = query.eq('facility_id', facilityId);
-      }
+      if (facilityId) query = query.eq('facility_id', facilityId);
 
       const { data: matchedBookings, error } = await query;
 
@@ -112,22 +151,30 @@ export default function ReceptionPinTab({
             text: `تم تأكيد هذا الحجز مسبقاً للمريض (${booking.patient_name}). لا يمكن إعادة التحقق.` 
           });
         } else {
-          // استخراج الكوبون المعتمد
-          const activeCoupon = booking.applied_coupon || booking.discount_coupon || (booking.discount_amount ? 'خصم مسبق' : 'لا يوجد كوبون');
+          const activeCoupon = booking.applied_coupon || booking.discount_coupon || (booking.discount_amount ? 'خصم مسبق' : 'بدون كوبون');
           const originalFee = Number(booking.consultation_fee) || 20;
           const discountVal = Number(booking.discount_amount) || 0;
           const netToCollect = Math.max(0, originalFee - discountVal);
 
+          // توثيق العملية باسم موظف الاستقبال المباشر
           const { error: updateErr } = await supabase
             .from('Booking')
-            .update({ status: 'completed' })
+            .update({ 
+              status: 'completed',
+              receptionist_name: activeStaff?.name || 'الاستقبال العام'
+            })
             .eq('id', booking.id);
 
           if (!updateErr) {
-            setBookings(prev => prev.map(b => b.id === booking.id ? { ...b, status: 'completed' } : b));
+            setBookings(prev => prev.map(b => b.id === booking.id ? { 
+              ...b, 
+              status: 'completed',
+              receptionist_name: activeStaff?.name || 'الاستقبال العام'
+            } : b));
+
             setPinResult({
               type: 'success',
-              text: `تم تأكيد حضور المريض (${booking.patient_name}) بنجاح!`,
+              text: `تم تأكيد حضور المريض (${booking.patient_name}) بنجاح بواسطة [${activeStaff?.name || 'موظف الوردية'}]!`,
               details: {
                 doctor: booking.doctor_name,
                 originalFee,
@@ -148,7 +195,7 @@ export default function ReceptionPinTab({
     setPinLoading(false);
   };
 
-  // تسجيل موعد حضوري وتعبئة الرمز تلقائياً
+  // حجز حضوري مع التعبئة التلقائية للرمز
   const handleCreateNewBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!facilityId || !newBookingData.patient_name || !newBookingData.patient_phone) return;
@@ -166,7 +213,8 @@ export default function ReceptionPinTab({
       status: 'pending',
       checkin_pin: generatedPin,
       deposit_amount: 20,
-      payment_method: 'cash'
+      payment_method: 'cash',
+      receptionist_name: activeStaff?.name || 'الاستقبال'
     };
 
     const { data, error } = await supabase.from('Booking').insert([newRecord]).select();
@@ -182,7 +230,7 @@ export default function ReceptionPinTab({
         booking_date: todayStr,
         booking_time: AVAILABLE_TIMES[0]
       });
-      alert(`تم تسجيل موعد المريض بنجاح! تم وضع رمز الـ PIN تلقائياً [ ${generatedPin} ] في خانة التحقق.`);
+      alert(`تم تسجيل الحجز بنجاح! تم وضع رمز الـ PIN تلقائياً [ ${generatedPin} ] في خانة التحقق.`);
     } else {
       alert(`خطأ: ${error?.message || 'تعذر تسجيل الموعد'}`);
     }
@@ -211,15 +259,104 @@ export default function ReceptionPinTab({
   const handleSupportCancelPing = (b: ReceptionBooking) => {
     const platformSupportPhone = '967770000000';
     const cancelMsg = encodeURIComponent(
-      `السلام عليكم خدمة عملاء المنصة،\nطلب إلغاء حجز من: ${facilityName}\n• المريض: ${b.patient_name}\n• الطبيب: ${b.doctor_name}\n• التاريخ: ${b.booking_date}`
+      `السلام عليكم خدمة عملاء المنصة،\nطلب إلغاء حجز من موظف استقبال: ${activeStaff?.name || 'الاستقبال'} - ${facilityName}\n• المريض: ${b.patient_name}\n• الطبيب: ${b.doctor_name}\n• التاريخ: ${b.booking_date}`
     );
     window.open(`https://api.whatsapp.com/send?phone=${platformSupportPhone}&text=${cancelMsg}`, '_blank');
   };
 
+  // شاشة قفل الوردية: تطلب من الموظف اختيار حسابه وإدخال رمزه السري
+  if (staffList.length > 0 && !activeStaff) {
+    return (
+      <div className="max-w-md mx-auto my-8 p-6 rounded-3xl border shadow-xl space-y-4 bg-slate-900 border-slate-800 text-white">
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center border border-amber-500/30">
+            <KeyRound className="w-6 h-6" />
+          </div>
+          <h2 className="text-base font-black">تسجيل دخول موظف الاستقبال (بدء الوردية)</h2>
+          <p className="text-xs text-slate-400">اختر اسمك وأدخل رقمك السري لمباشرة مهام التأكيد الميداني</p>
+        </div>
+
+        {loginError && (
+          <div className="p-3 bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl text-xs font-bold text-center">
+            {loginError}
+          </div>
+        )}
+
+        <form onSubmit={handleStaffLogin} className="space-y-4 text-xs">
+          <div>
+            <label className="block font-bold mb-1">اسم موظف الاستقبال:</label>
+            <select
+              value={selectedStaffId}
+              onChange={(e) => setSelectedStaffId(e.target.value)}
+              required
+              className="w-full p-3 border rounded-xl bg-slate-950 border-slate-700 text-white outline-none"
+            >
+              <option value="">-- اضغط لاختيار موظف الوردية --</option>
+              {staffList.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name} {!s.is_active ? '(معطل)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-bold mb-1">الرمز السري الخاص بك (PIN):</label>
+            <input
+              type="password"
+              maxLength={6}
+              required
+              placeholder="••••"
+              value={loginStaffPin}
+              onChange={(e) => setLoginStaffPin(e.target.value)}
+              className="w-full p-3 border rounded-xl bg-slate-950 border-slate-700 text-amber-300 font-mono text-center text-lg font-black tracking-widest outline-none"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2"
+          >
+            <UserCheck className="w-4 h-4" /> فتح الوردية ومباشرة العمل
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
 
-      {/* زر تسجيل موعد حضوري جديد */}
+      {/* شريط معلومات الموظف الحالي والوردية */}
+      {activeStaff && (
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-teal-600/20 text-teal-400 flex items-center justify-center font-bold">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs text-slate-400">الوردية الحالية تحت إدارة:</div>
+              <strong className="text-sm text-white">{activeStaff.name}</strong>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 block">إجمالي كاش ورديتك اليوم:</span>
+              <strong className="text-emerald-400 font-mono text-xs">{formatMoney(staffCollectedToday)}</strong>
+            </div>
+
+            <button
+              onClick={() => setActiveStaff(null)}
+              className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1"
+            >
+              <LogOut className="w-3.5 h-3.5" /> تبديل الوردية
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* تسجيل موعد حضوري جديد */}
       <div className="flex justify-between items-center bg-teal-600/10 border border-teal-500/20 p-4 rounded-2xl">
         <div>
           <h3 className="font-bold text-sm text-teal-600">تسجيل مريض جديد بالحضور المباشر</h3>
@@ -233,7 +370,7 @@ export default function ReceptionPinTab({
         </button>
       </div>
 
-      {/* خانة التحقق بالـ PIN */}
+      {/* تأكيد حضور المريض بالرمز السري */}
       <section className={`border-2 border-amber-400 p-6 rounded-3xl shadow-sm space-y-4 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -271,7 +408,6 @@ export default function ReceptionPinTab({
           </form>
         </div>
 
-        {/* كارت النتيجة مع إبراز كوبون الخصم والتفصيل المالي */}
         {pinResult && (
           <div className={`p-4 rounded-2xl text-xs font-bold space-y-3 border ${
             pinResult.type === 'success' 
@@ -290,7 +426,6 @@ export default function ReceptionPinTab({
                   <strong className="text-white text-xs">{pinResult.details.doctor}</strong>
                 </div>
 
-                {/* كوبون الخصم البارز */}
                 <div className="p-2 bg-teal-500/20 border border-teal-500/40 rounded-xl">
                   <span className="text-[10px] text-teal-300 block font-sans font-bold flex items-center gap-1">
                     <Tag className="w-3 h-3" /> كود الخصم المعتمد:
@@ -313,7 +448,7 @@ export default function ReceptionPinTab({
         )}
       </section>
 
-      {/* صالة انتظار اليوم مع زر الواتساب المباشر */}
+      {/* صالة انتظار اليوم مع إظهار الموظف المسؤول عن التحقق */}
       <section className={`p-6 rounded-3xl border shadow-sm space-y-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div className={`flex justify-between items-center border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           <h3 className={`text-base font-bold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -337,9 +472,9 @@ export default function ReceptionPinTab({
                   <th className="p-3">الوقت</th>
                   <th className="p-3">الطبيب</th>
                   <th className="p-3">المطلوب نقداً</th>
-                  <th className="p-3">الكوبون</th>
+                  <th className="p-3">موظف الاستقبال</th>
                   <th className="p-3">الحالة</th>
-                  <th className="p-3">واتساب المريض</th>
+                  <th className="p-3">واتساب</th>
                   <th className="p-3">إجراءات</th>
                 </tr>
               </thead>
@@ -355,7 +490,6 @@ export default function ReceptionPinTab({
                   );
 
                   const isLocked = b.status === 'completed' || b.status === 'confirmed';
-                  const activeCoupon = b.applied_coupon || b.discount_coupon || (b.discount_amount ? 'خصم مسبق' : '—');
 
                   return (
                     <tr key={b.id} className={isDarkMode ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
@@ -368,8 +502,8 @@ export default function ReceptionPinTab({
                       <td className="p-3 font-mono font-bold text-emerald-500">
                         {formatMoney(b.deposit_amount || 20)}
                       </td>
-                      <td className="p-3 font-mono font-bold text-teal-400">
-                        {activeCoupon}
+                      <td className="p-3 font-bold text-slate-300">
+                        {b.receptionist_name || '—'}
                       </td>
                       <td className="p-3">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
@@ -383,7 +517,6 @@ export default function ReceptionPinTab({
                           {b.status === 'completed' ? 'تم الكشف' : b.status === 'confirmed' ? 'مؤكد' : 'قيد الانتظار'}
                         </span>
                       </td>
-                      {/* زر الواتساب المباشر للمريض */}
                       <td className="p-3">
                         <a
                           href={`https://api.whatsapp.com/send?phone=${waNumber}&text=${waText}`}
