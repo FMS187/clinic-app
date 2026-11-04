@@ -264,24 +264,6 @@ export default function ReceptionPinTab({
     window.open(`https://api.whatsapp.com/send?phone=${platformSupportPhone}&text=${cancelMsg}`, '_blank');
   };
 
-  // شاشة قفل الوردية: تطلب من الموظف اختيار حسابه وإدخال رمزه السري
-  if (staffList.length > 0 && !activeStaff) {
-    return (
-      <div className="max-w-md mx-auto my-8 p-6 rounded-3xl border shadow-xl space-y-4 bg-slate-900 border-slate-800 text-white">
-        <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center border border-amber-500/30">
-            <KeyRound className="w-6 h-6" />
-          </div>
-          <h2 className="text-base font-black">تسجيل دخول موظف الاستقبال (بدء الوردية)</h2>
-          <p className="text-xs text-slate-400">اختر اسمك وأدخل رقمك السري لمباشرة مهام التأكيد الميداني</p>
-        </div>
-
-        {loginError && (
-          <div className="p-3 bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-xl text-xs font-bold text-center">
-            {loginError}
-          </div>
-        )}
-
         <form onSubmit={handleStaffLogin} className="space-y-4 text-xs">
           <div>
             <label className="block font-bold mb-1">اسم موظف الاستقبال:</label>
