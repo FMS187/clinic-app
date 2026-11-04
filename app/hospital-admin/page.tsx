@@ -4,35 +4,36 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { 
   Building2, Calendar, CreditCard, Wallet, Stethoscope, 
-  Clock, KeyRound, LogOut, Moon, Sun, DollarSign, Menu, X, Loader2
+  Clock, KeyRound, LogOut, Moon, Sun, Menu, X, Loader2, Users
 } from 'lucide-react';
 
-// استيراد المكونات المستقلة
+// المكونات المستقلة
 import WalletsTab from '@/components/hospital/WalletsTab';
 import DoctorsTab, { Doctor } from '@/components/hospital/DoctorsTab';
 import BillingTab, { CompletedBookingDetail } from '@/components/hospital/BillingTab';
-import BookingsTab, { BookingItem } from '@/components/hospital/BookingsTab';
+import BookingsTab from '@/components/hospital/BookingsTab';
 import ScheduleSettingsTab from '@/components/hospital/ScheduleSettingsTab';
 import ReceptionPinTab from '@/components/hospital/ReceptionPinTab';
+import StaffManagementTab, { StaffMember } from '@/components/hospital/StaffManagementTab';
 
 export default function HospitalAdminPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isManager, setIsManager] = useState(false);
 
-  // بيانات الدخول
+  // تسجيل الدخول
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginSubmitting, setLoginSubmitting] = useState(false);
 
-  // إعدادات العرض
+  // الإعدادات
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [currency, setCurrency] = useState<'USD' | 'YER' | 'SAR'>('USD');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // التبويب النشط
-  const [activeTab, setActiveTab] = useState<'bookings' | 'billing' | 'wallets' | 'doctors' | 'schedule' | 'checkin'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'billing' | 'wallets' | 'doctors' | 'schedule' | 'staff' | 'checkin'>('bookings');
 
   // بيانات المنشأة
   const [facility, setFacility] = useState<any>(null);
@@ -40,7 +41,6 @@ export default function HospitalAdminPage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(false);
 
-  // تحويل العملات
   const formatMoney = (amountInUsd: number) => {
     const rates = { USD: 1, YER: 535, SAR: 3.75 };
     const symbols = { USD: '$', YER: 'ريال يمني', SAR: 'ر.س' };
@@ -48,7 +48,6 @@ export default function HospitalAdminPage() {
     return `${Math.round(converted).toLocaleString('ar-YE')} ${symbols[currency]}`;
   };
 
-  // فحص الجلسة عند التحميل
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -61,7 +60,6 @@ export default function HospitalAdminPage() {
     checkSession();
   }, []);
 
-  // جلب بيانات المنشأة
   const loadFacilityData = async (user: any) => {
     setLoadingData(true);
     try {
@@ -75,22 +73,18 @@ export default function HospitalAdminPage() {
 
       let facId = user.user_metadata?.facility_id;
 
-      // إذا لم يكن المعرف مسجلاً، نجلب أول منشأة للتجربة
       if (!facId) {
         const { data: firstFac } = await supabase.from('ClinicFacility').select('id').limit(1).single();
         if (firstFac) facId = firstFac.id;
       }
 
       if (facId) {
-        // 1. جلب بيانات المنشأة
         const { data: facData } = await supabase.from('ClinicFacility').select('*').eq('id', facId).single();
         if (facData) setFacility(facData);
 
-        // 2. جلب الأطباء
         const { data: docsData } = await supabase.from('Doctor').select('*').eq('facility_id', facId);
         if (docsData) setDoctors(docsData);
 
-        // 3. جلب الحجوزات
         const { data: bData } = await supabase
           .from('Booking')
           .select('*')
@@ -104,7 +98,6 @@ export default function HospitalAdminPage() {
     setLoadingData(false);
   };
 
-  // تسجيل الدخول
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginSubmitting(true);
@@ -124,7 +117,6 @@ export default function HospitalAdminPage() {
     setLoginSubmitting(false);
   };
 
-  // تسجيل الخروج
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setCurrentUser(null);
@@ -133,7 +125,6 @@ export default function HospitalAdminPage() {
     setBookings([]);
   };
 
-  // استخراج تفاصيل الكشوفات المكتملة كاش لحساب المديونية
   const completedCashBookings: CompletedBookingDetail[] = bookings
     .filter(b => b.status === 'completed')
     .map(b => ({
@@ -147,8 +138,8 @@ export default function HospitalAdminPage() {
     }));
 
   const calculatedDebt = completedCashBookings.reduce((sum, item) => sum + (item.platform_fee || 2), 0);
+  const staffList: StaffMember[] = facility?.wallets_info?.reception_staff || [];
 
-  // شاشة التحميل الأولية
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
@@ -157,7 +148,6 @@ export default function HospitalAdminPage() {
     );
   }
 
-  // واجهة تسجيل الدخول إذا لم يكن مسجلاً
   if (!currentUser) {
     return (
       <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
@@ -167,7 +157,7 @@ export default function HospitalAdminPage() {
               <Building2 className="w-7 h-7" />
             </div>
             <h1 className="text-xl font-black">بوابة المنشآت الطبية الشريكة</h1>
-            <p className="text-xs text-slate-400">سجّل دخولك لإدارة المركز أو مباشرة مهام الاستقبال</p>
+            <p className="text-xs text-slate-400">سجّل دخولك لإدارة المركز أو متابعة صالة الاستقبال</p>
           </div>
 
           {loginError && (
@@ -214,11 +204,10 @@ export default function HospitalAdminPage() {
     );
   }
 
-  // الواجهة الرئيسية للمنظومة بعد تسجيل الدخول
   return (
     <div className={`min-h-screen flex ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>
       
-            {/* خلفية معتمة للجوال عند فتح القائمة */}
+      {/* خلفية معتمة للجوال عند فتح القائمة */}
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)} 
@@ -226,11 +215,10 @@ export default function HospitalAdminPage() {
         />
       )}
 
-      {/* القائمة الجانبية (Sidebar) */}
+      {/* القائمة الجانبية */}
       <aside className={`fixed inset-y-0 right-0 z-40 w-64 border-l transition-transform duration-300 ease-in-out ${
         isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full lg:translate-x-0'
       } ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} flex flex-col justify-between p-4`}>
-
         
         <div className="space-y-6">
           <div className="flex justify-between items-center border-b pb-4">
@@ -239,7 +227,7 @@ export default function HospitalAdminPage() {
                 {facility?.name || 'المنشأة الطبية'}
               </h2>
               <span className="text-[10px] text-slate-400 block mt-0.5">
-                {isManager ? 'مدير المنشأة (إشرافي/مالي)' : 'موظف استقبال (ميداني)'}
+                {isManager ? 'مدير المنشأة (إشرافي/مالي)' : 'شباك الاستقبال (ميداني)'}
               </span>
             </div>
             <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400">
@@ -247,7 +235,6 @@ export default function HospitalAdminPage() {
             </button>
           </div>
 
-          {/* عناصر التنقل حسب الرتبة */}
           <nav className="space-y-1">
             {isManager ? (
               <>
@@ -269,6 +256,16 @@ export default function HospitalAdminPage() {
                 >
                   <Clock className="w-4 h-4" />
                   <span>الدوام وإجازات الأطباء</span>
+                </button>
+
+                <button
+                  onClick={() => { setActiveTab('staff'); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
+                    activeTab === 'staff' ? 'bg-teal-600 text-white' : 'hover:bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>حسابات موظفي الاستقبال (PIN)</span>
                 </button>
 
                 <button
@@ -314,13 +311,12 @@ export default function HospitalAdminPage() {
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition bg-amber-500 text-white`}
               >
                 <KeyRound className="w-4 h-4" />
-                <span>تأكيد الحضور (PIN) وصالة الانتظار</span>
+                <span>شباك الاستقبال (PIN) والورديات</span>
               </button>
             )}
           </nav>
         </div>
 
-        {/* الحساب والخروج */}
         <div className="pt-4 border-t border-slate-800/40 space-y-2">
           <div className="text-[10px] text-slate-400 truncate">
             المستخدم: {currentUser.email}
@@ -336,29 +332,24 @@ export default function HospitalAdminPage() {
 
       </aside>
 
-            {/* المحتوى الرئيسي للمنظومة */}
+      {/* المحتوى الرئيسي */}
       <main className="flex-1 w-full min-w-0 overflow-x-hidden lg:mr-64 p-3 sm:p-6 space-y-4 sm:space-y-6">
-
         
-        {/* الشريط العلوي العام */}
         <header className={`p-4 rounded-3xl border flex justify-between items-center ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-                    <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <button 
               onClick={() => setIsSidebarOpen(prev => !prev)} 
               className={`p-2 rounded-xl border lg:hidden transition ${isDarkMode ? 'bg-slate-800 border-slate-700 text-teal-400' : 'bg-slate-100 border-slate-200 text-slate-700'}`}
-              aria-label="القائمة"
             >
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-sm sm:text-base font-black flex items-center gap-1.5 truncate">
-
               <Building2 className="w-5 h-5 text-teal-600" />
               {facility?.name || 'بوابة إدارة المنشأة'}
             </h1>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* اختيار العملة */}
             <div className="flex border rounded-xl overflow-hidden text-xs font-bold">
               {(['USD', 'YER', 'SAR'] as const).map(c => (
                 <button
@@ -371,7 +362,6 @@ export default function HospitalAdminPage() {
               ))}
             </div>
 
-            {/* الوضع الليلي / الفاتح */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className={`p-2 rounded-xl border transition ${isDarkMode ? 'border-slate-700 text-amber-400 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100'}`}
@@ -381,7 +371,6 @@ export default function HospitalAdminPage() {
           </div>
         </header>
 
-        {/* عرض التبويب النشط بعد التحميل */}
         {loadingData ? (
           <div className="py-20 text-center space-y-2">
             <Loader2 className="w-8 h-8 animate-spin text-teal-500 mx-auto" />
@@ -389,7 +378,6 @@ export default function HospitalAdminPage() {
           </div>
         ) : (
           <div>
-            {/* 1. جدول الحجوزات والرقابة */}
             {activeTab === 'bookings' && isManager && (
               <BookingsTab
                 facilityName={facility?.name || ''}
@@ -399,7 +387,6 @@ export default function HospitalAdminPage() {
               />
             )}
 
-                        {/* 2. الدوام وإجازات الأطباء */}
             {activeTab === 'schedule' && isManager && (
               <ScheduleSettingsTab
                 facilityId={facility?.id || ''}
@@ -410,8 +397,20 @@ export default function HospitalAdminPage() {
               />
             )}
 
+            {activeTab === 'staff' && isManager && (
+              <StaffManagementTab
+                facilityId={facility?.id || ''}
+                initialStaff={staffList}
+                isDarkMode={isDarkMode}
+                onStaffUpdated={(newStaff) => {
+                  setFacility((prev: any) => ({
+                    ...prev,
+                    wallets_info: { ...(prev?.wallets_info || {}), reception_staff: newStaff }
+                  }));
+                }}
+              />
+            )}
 
-            {/* 3. الفوترة والعمولات */}
             {activeTab === 'billing' && isManager && (
               <BillingTab
                 facilityName={facility?.name || ''}
@@ -425,7 +424,6 @@ export default function HospitalAdminPage() {
               />
             )}
 
-            {/* 4. المحافظ الإلكترونية */}
             {activeTab === 'wallets' && isManager && (
               <WalletsTab
                 facilityId={facility?.id || ''}
@@ -434,7 +432,6 @@ export default function HospitalAdminPage() {
               />
             )}
 
-            {/* 5. كادر الأطباء */}
             {activeTab === 'doctors' && isManager && (
               <DoctorsTab
                 facilityId={facility?.id || ''}
@@ -447,7 +444,6 @@ export default function HospitalAdminPage() {
               />
             )}
 
-            {/* 6. صالة الاستقبال وتأكيد PIN */}
             {activeTab === 'checkin' && (
               <ReceptionPinTab
                 facilityId={facility?.id || ''}
@@ -455,9 +451,9 @@ export default function HospitalAdminPage() {
                 doctors={doctors}
                 bookings={bookings}
                 setBookings={setBookings}
+                staffList={staffList}
                 isDarkMode={isDarkMode}
                 formatMoney={formatMoney}
-                currentUserEmail={currentUser.email}
               />
             )}
           </div>
