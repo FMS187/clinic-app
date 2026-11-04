@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { 
   CreditCard, Wallet, AlertTriangle, Copy, Check, 
-  MessageSquareShare, Eye, X, Calendar, User, Stethoscope 
+  MessageSquareShare, Eye, X, Download, CheckCircle2 
 } from 'lucide-react';
 
 export interface CompletedBookingDetail {
@@ -60,6 +60,34 @@ export default function BillingTab({
     window.open(`https://api.whatsapp.com/send?phone=${adminWhatsApp}&text=${message}`, '_blank');
   };
 
+  // تصدير التقرير المالي بصيغة Excel / CSV
+  const handleExportCSV = () => {
+    if (completedBookings.length === 0) {
+      alert('لا توجد بيانات كشوفات لتصديرها.');
+      return;
+    }
+
+    const headers = ['المريض', 'الهاتف', 'الطبيب', 'تاريخ الكشف', 'المبلغ المحصل ($)', 'عمولة المنصة ($)'];
+    const rows = completedBookings.map(b => [
+      `"${b.patient_name || ''}"`,
+      `"${b.patient_phone || ''}"`,
+      `"${b.doctor_name || ''}"`,
+      `"${b.booking_date || ''}"`,
+      `"${b.consultation_fee || 20}"`,
+      `"${b.platform_fee || commissionRate}"`
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `تقرير_العمولات_${facilityName || 'المنشأة'}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className={`p-6 rounded-3xl border shadow-sm max-w-3xl mx-auto space-y-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
       
@@ -88,10 +116,10 @@ export default function BillingTab({
         </div>
       )}
 
-      {/* كروت الأرقام المالية (البطاقة الأولى قابلة للنقر) */}
+      {/* كروت الأرقام المالية */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         
-        {/* زر بطاقة المديونية القابل للنقر */}
+        {/* زر بطاقة المديونية */}
         <button
           type="button"
           onClick={() => setShowDetailsModal(true)}
@@ -193,7 +221,7 @@ export default function BillingTab({
 
       </div>
 
-      {/* نافذة منبثقة (Modal): تفاصيل الكشوفات المكتملة كاش المكونة للمديونية */}
+      {/* نافذة تفاصيل الكشوفات المكتملة مع زر تصدير CSV */}
       {showDetailsModal && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
           <div className={`rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[85vh] flex flex-col ${
@@ -210,12 +238,25 @@ export default function BillingTab({
                   كافة الحالات التي تمت تسويتها وحُسبت عمولتها لصالح المنصة
                 </p>
               </div>
-              <button
-                onClick={() => setShowDetailsModal(false)}
-                className="p-1.5 rounded-xl hover:bg-slate-500/10 text-slate-400 hover:text-slate-200 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              
+              <div className="flex items-center gap-2">
+                {completedBookings.length > 0 && (
+                  <button
+                    onClick={handleExportCSV}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                    title="تنزيل التقرير المالي بصيغة Excel/CSV"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>تصدير Excel</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowDetailsModal(false)}
+                  className="p-1.5 rounded-xl hover:bg-slate-500/10 text-slate-400 hover:text-slate-200 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
