@@ -25,14 +25,14 @@ export default function AdminVerificationPage() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // جلب المنشآت من قاعدة البيانات
+  // دالة جلب المنشآت مباشرة من قاعدة البيانات
   const fetchTenants = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('tenants')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('name', { ascending: true });
 
       if (error) {
         throw error;
@@ -52,36 +52,44 @@ export default function AdminVerificationPage() {
     fetchTenants();
   }, []);
 
-  // دالة اعتماد المنشأة الطبية
+  // دالة اعتماد المنشأة الطبية وحفظها فوراً في Supabase
   const handleApprove = async (id: string) => {
     setProcessingId(id);
     setActionMessage(null);
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tenants')
         .update({
           status: 'approved',
           verified_at: new Date().toISOString(),
           rejection_reason: null,
         })
-        .eq('id', id);
+        .eq('id', id)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message);
+      }
 
+      if (!data || data.length === 0) {
+        throw new Error('لم يتم حفظ التعديل في قاعدة البيانات، يرجى التأكد من تشغيل كود الصلاحيات SQL');
+      }
+
+      // تحديث الحالة في الواجهة بعد التأكد من حفظها في قاعدة البيانات
       setTenants((prev) =>
         prev.map((t) => (t.id === id ? { ...t, status: 'approved', rejection_reason: undefined } : t))
       );
 
-      setActionMessage({ type: 'success', text: 'تم اعتماد المنشأة الطبية بنجاح وتفعيل ظهورها للمرضى!' });
+      setActionMessage({ type: 'success', text: 'تم حفظ اعتماد المنشأة بنجاح وبشكل دائم في قاعدة البيانات!' });
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: `خطأ أثناء الاعتماد: ${err.message}` });
+      setActionMessage({ type: 'error', text: `خطأ أثناء حفظ الاعتماد: ${err.message}` });
     } finally {
       setProcessingId(null);
     }
   };
 
-  // دالة تأكيد رفض المنشأة الطبية مع توضيح السبب
+  // دالة تأكيد رفض المنشأة وتوثيق سبب الرفض في Supabase
   const handleConfirmReject = async () => {
     if (!rejectModalTenant) return;
     if (!rejectionReason.trim()) {
@@ -93,16 +101,23 @@ export default function AdminVerificationPage() {
     setActionMessage(null);
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tenants')
         .update({
           status: 'rejected',
           rejection_reason: rejectionReason.trim(),
           verified_at: new Date().toISOString(),
         })
-        .eq('id', rejectModalTenant.id);
+        .eq('id', rejectModalTenant.id)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('لم يتم حفظ التعديل في قاعدة البيانات، يرجى التأكد من تشغيل كود الصلاحيات SQL');
+      }
 
       setTenants((prev) =>
         prev.map((t) =>
@@ -112,17 +127,17 @@ export default function AdminVerificationPage() {
         )
       );
 
-      setActionMessage({ type: 'success', text: 'تم رفض طلب المنشأة وتوثيق سبب الرفض بنجاح.' });
+      setActionMessage({ type: 'success', text: 'تم توثيق رفض المنشأة وحفظ السبب في قاعدة البيانات بنجاح.' });
       setRejectModalTenant(null);
       setRejectionReason('');
     } catch (err: any) {
-      setActionMessage({ type: 'error', text: `خطأ أثناء الرفض: ${err.message}` });
+      setActionMessage({ type: 'error', text: `خطأ أثناء الحفظ: ${err.message}` });
     } finally {
       setProcessingId(null);
     }
   };
 
-  // تصفية العيادات المعروضة بناءً على التبويب
+  // تصفية المنشآت حسب التبويب النشط
   const filteredTenants = tenants.filter((tenant) => {
     if (filter === 'all') return true;
     return tenant.status === filter;
@@ -132,22 +147,23 @@ export default function AdminVerificationPage() {
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 sm:p-8" dir="rtl">
       <div className="max-w-6xl mx-auto space-y-6">
 
-        {/* رأس الصفحة */}
+        {/* رأس لوحة الاعتماد */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl">
           <div>
             <h1 className="text-2xl font-black text-white flex items-center gap-2">
               🛡️ لوحة اعتماد المنشآت الطبية
             </h1>
             <p className="text-sm text-slate-400 mt-1">
-              مراجعة التراخيص الرسمية والبت في طلبات انضمام العيادات والمراكز للمنصة
+              مراجعة التراخيص الرسمية وتثبيت حالة الاعتماد في قاعدة البيانات
             </p>
           </div>
 
           <button
+            type="button"
             onClick={fetchTenants}
             className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
           >
-            🔄 تحديث القائمة
+            🔄 تحديث البيانات
           </button>
         </div>
 
@@ -164,9 +180,10 @@ export default function AdminVerificationPage() {
           </div>
         )}
 
-        {/* تبويبات التصفية */}
+        {/* أزرار التبويبات للتصفية */}
         <div className="flex gap-2 border-b border-slate-800 pb-3 overflow-x-auto">
           <button
+            type="button"
             onClick={() => setFilter('pending')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
               filter === 'pending'
@@ -178,6 +195,7 @@ export default function AdminVerificationPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => setFilter('approved')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
               filter === 'approved'
@@ -189,6 +207,7 @@ export default function AdminVerificationPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => setFilter('rejected')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
               filter === 'rejected'
@@ -200,6 +219,7 @@ export default function AdminVerificationPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => setFilter('all')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
               filter === 'all'
@@ -211,10 +231,10 @@ export default function AdminVerificationPage() {
           </button>
         </div>
 
-        {/* جدول عرض المنشآت */}
+        {/* عرض قائمة المنشآت */}
         {loading ? (
           <div className="text-center py-20 text-slate-400 text-sm">
-            جارٍ تحميل بيانات المنشآت الطبية...
+            جارٍ جلب بيانات المنشآت الطبية من الخادم...
           </div>
         ) : filteredTenants.length === 0 ? (
           <div className="text-center py-16 bg-slate-800/40 rounded-3xl border border-slate-800 p-8">
@@ -301,16 +321,18 @@ export default function AdminVerificationPage() {
                           <div className="flex items-center gap-2">
                             {t.status !== 'approved' && (
                               <button
+                                type="button"
                                 onClick={() => handleApprove(t.id)}
                                 disabled={isProcessing}
                                 className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition disabled:opacity-50"
                               >
-                                {isProcessing ? '...' : 'اعتماد'}
+                                {isProcessing ? 'جارٍ الحفظ...' : 'اعتماد'}
                               </button>
                             )}
 
                             {t.status !== 'rejected' && (
                               <button
+                                type="button"
                                 onClick={() => {
                                   setRejectModalTenant(t);
                                   setRejectionReason('');
@@ -348,7 +370,7 @@ export default function AdminVerificationPage() {
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 placeholder="مثال: رقم الترخيص الطبي غير مطابق للوثيقة المرفقة، أو الوثيقة منتهية الصلاحية."
-                className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs outline-none focus:border-rose-500"
+                className="w-full p-3 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs outline-none focus:border-rose-500"
               />
 
               <div className="flex gap-2 pt-2">
@@ -365,7 +387,7 @@ export default function AdminVerificationPage() {
                   disabled={processingId === rejectModalTenant.id}
                   className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition"
                 >
-                  {processingId === rejectModalTenant.id ? 'جارٍ الرفض...' : 'تأكيد الرفض'}
+                  {processingId === rejectModalTenant.id ? 'جارٍ الحفظ...' : 'تأكيد الرفض'}
                 </button>
               </div>
             </div>
