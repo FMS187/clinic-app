@@ -65,32 +65,106 @@ export default function HospitalAdminPage() {
     try {
       const emailLower = (user.email || '').toLowerCase().trim();
       const metaRole = user.user_metadata?.role;
-      const isReception = emailLower === 'faisal.ed88@gmail.com' || metaRole === 'receptionist';
+      const isReception = metaRole === 'receptionist';
       const managerStatus = !isReception;
 
       setIsManager(managerStatus);
       setActiveTab(managerStatus ? 'bookings' : 'checkin');
 
-      let facId = user.user_metadata?.facility_id;
+      let targetFacility: any = null;
+      let facId: string | null = user.user_metadata?.facility_id || null;
 
+      // 1. فحص جدول profiles لمعرفة منشأة المستخدم المسجل
       if (!facId) {
-        const { data: firstFac } = await supabase.from('ClinicFacility').select('id').limit(1).single();
-        if (firstFac) facId = firstFac.id;
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('tenant_id')
+          .eq('id', user.id)
+          .single();
+
+        if (profileData && profileData.tenant_id) {
+          facId = profileData.tenant_id;
+        }
       }
 
+      // 2. إذا وجد المعرف، نحاول جلبه من ClinicFacility أولاً
       if (facId) {
-        const { data: facData } = await supabase.from('ClinicFacility').select('*').eq('id', facId).single();
-        if (facData) setFacility(facData);
+        const { data: facData } = await supabase
+          .from('ClinicFacility')
+          .select('*')
+          .eq('id', facId)
+          .single();
 
-        const { data: docsData } = await supabase.from('Doctor').select('*').eq('facility_id', facId);
+        if (facData) {
+          targetFacility = facData;
+        }
+      }
+
+      // 3. إذا لم يجد في ClinicFacility بالمعرف، نبحث في جدول tenants بنفس المعرف أو الإيميل
+      if (!targetFacility) {
+        let tenantQuery = supabase.from('tenants').select('*');
+        if (facId) {
+          tenantQuery = tenantQuery.eq('id', facId);
+        } else {
+          tenantQuery = tenantQuery.eq('email', emailLower);
+        }
+
+        const { data: tenantResult } = await tenantQuery.limit(1);
+
+        if (tenantResult && tenantResult.length > 0) {
+          const matchedTenant = tenantResult[0];
+
+          // فحص هل المنشأة تم نقلها إلى ClinicFacility بنفس الاسم أو الهاتف
+          const { data: matchedFac } = await supabase
+            .from('ClinicFacility')
+            .select('*')
+            .or(`name.eq.${matchedTenant.name},phone.eq.${matchedTenant.phone}`)
+            .limit(1);
+
+          if (matchedFac && matchedFac.length > 0) {
+            targetFacility = matchedFac[0];
+          } else {
+            targetFacility = {
+              id: matchedTenant.id,
+              name: matchedTenant.name,
+              city: matchedTenant.city || 'صنعاء',
+              address: matchedTenant.address || 'اليمن',
+              phone: matchedTenant.phone || '',
+              whatsapp_number: matchedTenant.phone || '',
+              commission_rate: 2.0,
+              credit_limit: 50.0,
+              current_debt: 0.0,
+              is_active: matchedTenant.status === 'approved',
+              wallets_info: { kuraimi: '3001234567', onecash: '770000000', reception_staff: [] }
+            };
+          }
+        }
+      }
+
+      // 4. إذا لم توجد منشأة خاصة به، لا نسحب عيادة عشوائية
+      if (targetFacility) {
+        setFacility(targetFacility);
+
+        // جلب أطباء هذه المنشأة حصراً
+        const { data: docsData } = await supabase
+          .from('Doctor')
+          .select('*')
+          .eq('facility_id', targetFacility.id);
+
         if (docsData) setDoctors(docsData);
 
+        // جلب حجوزات هذه المنشأة حصراً
         const { data: bData } = await supabase
           .from('Booking')
           .select('*')
-          .eq('facility_id', facId)
+          .eq('facility_id', targetFacility.id)
           .order('booking_date', { ascending: false });
+
         if (bData) setBookings(bData);
+      } else {
+        setFacility(null);
+        setDoctors([]);
+        setBookings([]);
       }
     } catch (e) {
       console.error(e);
@@ -235,7 +309,7 @@ export default function HospitalAdminPage() {
             </button>
           </div>
 
-                     <nav className="space-y-1">
+          <nav className="space-y-1">
             {/* رابط شاشة الاستقبال المستقلة */}
             <a
               href="/hospital-reception"
@@ -252,17 +326,6 @@ export default function HospitalAdminPage() {
 
             {isManager ? (
               <>
-                <button
-                  onClick={() => { setActiveTab('staff'); setIsSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
-                    activeTab === 'staff' ? 'bg-teal-600 text-white' : 'hover:bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  <Users className="w-4 h-4" />
-                  <span>حسابات موظفي الاستقبال PIN</span>
-                </button>
-
-
                 <button
                   onClick={() => { setActiveTab('bookings'); setIsSidebarOpen(false); }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
@@ -290,7 +353,7 @@ export default function HospitalAdminPage() {
                   }`}
                 >
                   <Users className="w-4 h-4" />
-                  <span>حسابات موظفي الاستقبال (PIN)</span>
+                  <span>حسابات موظفي الاستقبال PIN</span>
                 </button>
 
                 <button
