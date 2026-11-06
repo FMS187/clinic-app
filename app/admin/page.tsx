@@ -17,11 +17,11 @@ interface Facility {
   id: string;
   name: string;
   city: string;
-  district: string;
+  district?: string;
   address: string;
   phone: string;
-  whatsapp_number: string;
-  facility_type: string;
+  whatsapp_number?: string;
+  facility_type?: string;
   is_active?: boolean;
   commission_rate?: number;
   credit_limit?: number;
@@ -52,7 +52,7 @@ export default function SuperAdminDashboard() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
   // التبويب النشط
-  const [activeTab, setActiveTab] = useState<'overview' | 'billing' | 'cancelled_audit' | 'facilities' | 'bookings' | 'analytics' | 'coupons' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'billing' | 'cancelled_audit' | 'facilities' | 'bookings' | 'analytics' | 'coupons' | 'settings'>('facilities');
 
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [pendingTenants, setPendingTenants] = useState<PendingTenant[]>([]);
@@ -95,13 +95,51 @@ export default function SuperAdminDashboard() {
   const [rejectionReasonText, setRejectionReasonText] = useState('');
   const [processingTenantId, setProcessingTenantId] = useState<string | null>(null);
 
+  // جلب كافة بيانات المنصة مع التراخيص
+  const fetchAllPlatformData = async () => {
+    setLoadingData(true);
+    try {
+      // 1. جلب المنشآت المعتمدة المسجلة في ClinicFacility
+      const { data: facs, error: facsErr } = await supabase
+        .from('ClinicFacility')
+        .select('*');
+
+      if (!facsErr && facs) {
+        setFacilities(facs);
+      }
+
+      // 2. جلب الحجوزات
+      const { data: books, error: booksErr } = await supabase
+        .from('Booking')
+        .select('*')
+        .order('booking_date', { ascending: false });
+
+      if (!booksErr && books) {
+        setBookings(books);
+      }
+
+      // 3. جلب جميع طلبات العيادات والتراخيص من جدول tenants
+      const { data: tenantsData, error: tenantsErr } = await supabase
+        .from('tenants')
+        .select('*');
+
+      if (!tenantsErr && tenantsData) {
+        setPendingTenants(tenantsData as PendingTenant[]);
+      }
+    } catch (e) {
+      console.log('Error fetching platform data', e);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
   // فحص الحسابات التلقائي
   const runAutoAuditAndFetch = async () => {
     setRunningCron(true);
     try {
       await fetch('/api/cron/auto-complete').catch(() => {});
       await fetchAllPlatformData();
-      setCronSuccessMsg('تم فحص ومطابقة الحسابات المالية وتحديث المنشآت بنجاح.');
+      setCronSuccessMsg('تم فحص ومطابقة الحسابات وتحديث المنشآت بنجاح.');
       setTimeout(() => setCronSuccessMsg(''), 4000);
     } catch (e) {
       console.log('Error triggering cron', e);
@@ -114,44 +152,12 @@ export default function SuperAdminDashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (currentUser) {
-        runAutoAuditAndFetch();
-      }
+      fetchAllPlatformData();
       setLoadingAuth(false);
     };
 
     checkSession();
   }, []);
-
-  const fetchAllPlatformData = async () => {
-    setLoadingData(true);
-    try {
-      // 1. جلب المنشآت المعتمدة النشطة
-      const { data: facs } = await supabase
-        .from('ClinicFacility')
-        .select('*')
-        .order('name', { ascending: true });
-
-      // 2. جلب الحجوزات
-      const { data: books } = await supabase
-        .from('Booking')
-        .select('*')
-        .order('booking_date', { ascending: false });
-
-      // 3. جلب طلبات تسجيل العيادات والتراخيص
-      const { data: tenantsData } = await supabase
-        .from('tenants')
-        .select('*')
-        .order('name', { ascending: true });
-
-      if (facs) setFacilities(facs);
-      if (books) setBookings(books);
-      if (tenantsData) setPendingTenants(tenantsData as PendingTenant[]);
-    } catch (e) {
-      console.log('Error fetching platform data', e);
-    }
-    setLoadingData(false);
-  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,6 +166,8 @@ export default function SuperAdminDashboard() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setAuthError('بيانات الدخول غير صحيحة.');
+    } else {
+      fetchAllPlatformData();
     }
     setAuthSubmitting(false);
   };
@@ -169,7 +177,7 @@ export default function SuperAdminDashboard() {
     setUser(null);
   };
 
-  // اعتماد منشأة مسجلة ونقلها تلقائياً لدليل المنشآت النشطة وإرسال واتساب
+  // اعتماد منشأة مسجلة ونقلها تلقائياً لدليل المنشآت وتوليد رسالة واتساب
   const handleApproveTenant = async (tenant: PendingTenant) => {
     setProcessingTenantId(tenant.id);
 
@@ -190,7 +198,7 @@ export default function SuperAdminDashboard() {
 
       if (tenantErr) throw tenantErr;
 
-      // 2. نقل أو إدخال المنشأة في جدول ClinicFacility لتظهر في دليل المنشآت وصفحة الحجز
+      // 2. إدخال المنشأة في جدول ClinicFacility لتظهر في دليل المنشآت وصفحة الحجز
       const newFacilityRecord = {
         name: tenant.name,
         city: tenant.city || 'صنعاء',
@@ -212,13 +220,13 @@ export default function SuperAdminDashboard() {
         .select()
         .single();
 
-      // تحديث الواجهة
+      // تحديث الحالة في الشاشة
       setPendingTenants(prev => prev.map(t => t.id === tenant.id ? { ...t, status: 'approved' } : t));
       if (createdFac) {
         setFacilities(prev => [createdFac, ...prev]);
       }
 
-      // 3. فتح رسالة واتساب آلية للمنشأة تفيد بالاعتماد
+      // 3. فتح رسالة واتساب مجهزة للاعتماد
       const targetPhone = '967' + cleanPhone;
       const approvalMsg = encodeURIComponent(
         `السلام عليكم إدارة (${tenant.name})،\n` +
@@ -260,14 +268,12 @@ export default function SuperAdminDashboard() {
 
       if (error) throw error;
 
-      // تحديث الحالة في الواجهة
       setPendingTenants(prev => prev.map(t => t.id === rejectingTenant.id ? {
         ...t,
         status: 'rejected',
         rejection_reason: rejectionReasonText.trim()
       } : t));
 
-      // تجهيز رسالة الواتساب بالسبب
       let cleanPhone = (rejectingTenant.phone || '').replace(/[^0-9]/g, '');
       if (cleanPhone.startsWith('967')) cleanPhone = cleanPhone.slice(3);
       if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
@@ -467,7 +473,6 @@ export default function SuperAdminDashboard() {
     const cancellationRate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
     const couponUsageRate = total > 0 ? Math.round((couponUsedCount / total) * 100) : 0;
 
-    // المنشآت الأكثر استقبالاً للمرضى
     const facCounts: Record<string, number> = {};
     bookings.forEach(b => {
       const name = b.facility_name || 'غير محدد';
@@ -491,8 +496,8 @@ export default function SuperAdminDashboard() {
   }, [facilities, bookings]);
 
   // قائمة طلبات التراخيص التي تحتاج مراجعة
-  const pendingVerificationsCount = useMemo(() => {
-    return pendingTenants.filter(t => t.status === 'pending').length;
+  const pendingVerifications = useMemo(() => {
+    return pendingTenants.filter(t => t.status === 'pending');
   }, [pendingTenants]);
 
   // الحجوزات بعد الفلترة والبحث
@@ -595,15 +600,17 @@ export default function SuperAdminDashboard() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setActiveTab('analytics')}
-              className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 border ${
-                activeTab === 'analytics' ? 'bg-teal-600 text-white border-teal-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
+              type="button"
+              onClick={fetchAllPlatformData}
+              disabled={loadingData}
+              className="px-3.5 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 border bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
             >
-              <BarChart3 className="w-3.5 h-3.5" /> تقرير الاستخدام
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} />
+              تحديث البيانات
             </button>
 
             <button
+              type="button"
               onClick={runAutoAuditAndFetch}
               disabled={runningCron}
               className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-teal-300 rounded-2xl text-xs font-bold transition flex items-center gap-2 shadow-sm"
@@ -666,7 +673,7 @@ export default function SuperAdminDashboard() {
                 </div>
                 <span className="text-3xl font-black text-slate-900 font-mono mt-1 block">{stats.totalFacilities}</span>
                 <span className="text-[11px] text-teal-700 block mt-1">
-                  {pendingVerificationsCount > 0 ? `⚠️ يوجد (${pendingVerificationsCount}) بانتظار الاعتماد` : 'جميع المنشآت معتمدة'}
+                  {pendingVerifications.length > 0 ? `⚠️ يوجد (${pendingVerifications.length}) بانتظار الاعتماد` : 'جميع المنشآت معتمدة'}
                 </span>
               </button>
 
@@ -684,128 +691,21 @@ export default function SuperAdminDashboard() {
               </button>
 
             </div>
-
-            {/* ملخص حركة الحجوزات الأخيرة */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-              <div className="flex justify-between items-center border-b pb-3">
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-teal-600" /> أحدث الحجوزات عبر المنصة
-                </h3>
-                <button
-                  onClick={() => {
-                    setBookingStatusFilter('all');
-                    setActiveTab('bookings');
-                  }}
-                  className="text-xs font-bold text-teal-700 hover:underline"
-                >
-                  عرض الكل ({bookings.length})
-                </button>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {bookings.slice(0, 5).map(b => (
-                  <div key={b.id} className="py-2.5 flex justify-between items-center text-xs">
-                    <div>
-                      <span className="font-bold text-slate-900">{b.patient_name}</span>
-                      <span className="text-slate-400 mx-1.5">•</span>
-                      <span className="text-slate-600">{b.facility_name}</span>
-                      <span className="text-slate-400 mx-1.5">•</span>
-                      <span className="text-teal-700 font-bold">{b.doctor_name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-slate-400">{b.booking_date}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        b.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                        b.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' :
-                        b.status === 'cancelled' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {b.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
-        {/* 2. تحليلات حركة الدخول والاستخدام */}
-        {activeTab === 'analytics' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 block mb-1">معدل إتمام الكشوفات</span>
-                <span className="text-3xl font-black text-teal-700 font-mono">{analyticsData.completionRate}%</span>
-                <span className="text-[11px] text-slate-500 block mt-1">{analyticsData.completed} كشفاً منجزاً بنجاح</span>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 block mb-1">نسبة استخدام الكوبونات</span>
-                <span className="text-3xl font-black text-emerald-600 font-mono">{analyticsData.couponUsageRate}%</span>
-                <span className="text-[11px] text-slate-500 block mt-1">{analyticsData.couponUsedCount} مريض استفاد من الخصم</span>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
-                <span className="text-xs font-bold text-slate-400 block mb-1">معدل الإلغاء المشبوه</span>
-                <span className="text-3xl font-black text-rose-600 font-mono">{analyticsData.cancellationRate}%</span>
-                <span className="text-[11px] text-slate-500 block mt-1">{analyticsData.cancelled} كشفاً ملغياً</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b pb-3">
-                  <Building2 className="w-4 h-4 text-teal-600" /> أكثر المنشآت جذباً للمرضى
-                </h3>
-                <div className="space-y-3">
-                  {analyticsData.topFacilities.map((fac, idx) => (
-                    <div key={fac.name} className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-800">
-                        {idx + 1}. {fac.name}
-                      </span>
-                      <span className="font-mono bg-teal-50 text-teal-800 px-2.5 py-1 rounded-lg font-bold">
-                        {fac.count} حجز
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b pb-3">
-                  <Activity className="w-4 h-4 text-teal-600" /> مقاييس التفاعل والسيولة
-                </h3>
-                <div className="space-y-2.5 text-xs text-slate-600">
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span>إجمالي الحجوزات المنفذة عبر المنصة:</span>
-                    <strong className="font-mono text-slate-900">{analyticsData.total}</strong>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span>الحجوزات قيد الانتظار الحالية:</span>
-                    <strong className="font-mono text-amber-600">{analyticsData.pending}</strong>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span>متوسط صافي دخل المنصة لكل كشف:</span>
-                    <strong className="font-mono text-emerald-600">$1.50</strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 3. دليل وإدارة المنشآت مع فحص التراخيص والاعتماد التلقائي */}
+        {/* 2. دليل وإدارة المنشآت مع فحص التراخيص والاعتماد التلقائي */}
         {activeTab === 'facilities' && (
           <div className="space-y-6">
 
             {/* قسم طلبات التراخيص الجديدة التي تحتاج موافقة المالك */}
-            {pendingTenants.filter(t => t.status === 'pending').length > 0 && (
+            {pendingVerifications.length > 0 && (
               <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 shadow-sm space-y-4">
                 <div className="flex justify-between items-center border-b border-amber-200 pb-3">
                   <div>
                     <h2 className="text-base font-black text-amber-950 flex items-center gap-2">
                       <FileCheck className="w-5 h-5 text-amber-600" /> 
-                      طلبات انضمام وتراخيص جديدة بانتظار موافقتك ({pendingTenants.filter(t => t.status === 'pending').length})
+                      طلبات انضمام وتراخيص جديدة بانتظار موافقتك ({pendingVerifications.length})
                     </h2>
                     <p className="text-xs text-amber-700 mt-0.5">
                       بمجرد الموافقة، ستنزل المنشأة تلقائياً في دليلك أدناه وتظهر فوراً للمرضى مع إشعار المنشأة بالواتساب
@@ -814,7 +714,7 @@ export default function SuperAdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {pendingTenants.filter(t => t.status === 'pending').map(tenant => {
+                  {pendingVerifications.map(tenant => {
                     const isProcessing = processingTenantId === tenant.id;
                     const hasDoc = tenant.license_document_url && tenant.license_document_url !== 'pending-document';
 
@@ -936,6 +836,7 @@ export default function SuperAdminDashboard() {
 
                       <div className="flex gap-2">
                         <button
+                          type="button"
                           onClick={() => {
                             setEditingFac(fac);
                             setEditCommissionRate(fac.commission_rate || 2.0);
@@ -947,6 +848,7 @@ export default function SuperAdminDashboard() {
                         </button>
 
                         <button
+                          type="button"
                           onClick={() => toggleFacilityStatus(fac)}
                           className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
                             fac.is_active !== false ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
@@ -956,6 +858,7 @@ export default function SuperAdminDashboard() {
                         </button>
 
                         <button
+                          type="button"
                           onClick={() => handleDeleteFacility(fac.id)}
                           className="p-1.5 text-slate-400 hover:text-rose-600 rounded-xl transition border border-slate-200"
                           title="حذف المنشأة"
@@ -972,7 +875,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 4. سجل الحجوزات والتحكم الشامل */}
+        {/* 3. سجل الحجوزات */}
         {activeTab === 'bookings' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b pb-3">
@@ -980,7 +883,7 @@ export default function SuperAdminDashboard() {
                 <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-teal-600" /> سجل الحجوزات الشامل والتحكم
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">يمكنك تعديل حالة أي حجز والبحث باسم المريض أو هاتفه أو PIN</p>
+                <p className="text-xs text-slate-400 mt-0.5">تعديل حالة أي حجز والبحث باسم المريض أو هاتفه أو PIN</p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
@@ -1060,7 +963,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 5. الفوترة والتحصيل */}
+        {/* 4. الفوترة والتحصيل */}
         {activeTab === 'billing' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
@@ -1100,6 +1003,7 @@ export default function SuperAdminDashboard() {
                         </td>
                         <td className="p-3">
                           <button
+                            type="button"
                             onClick={() => generateWeeklyWhatsAppReport(fac)}
                             className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg border border-emerald-200 text-xs font-bold transition whitespace-nowrap"
                           >
@@ -1109,6 +1013,7 @@ export default function SuperAdminDashboard() {
                         <td className="p-3">
                           {debt > 0 ? (
                             <button
+                              type="button"
                               onClick={() => {
                                 setSelectedFacilityForPayment(fac);
                                 setPaymentAmount(debt);
@@ -1130,7 +1035,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 6. تدقيق الإلغاءات */}
+        {/* 5. تدقيق الإلغاءات */}
         {activeTab === 'cancelled_audit' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-base font-bold text-rose-700 flex items-center gap-2 border-b pb-3">
@@ -1189,43 +1094,6 @@ export default function SuperAdminDashboard() {
                 </table>
               </div>
             )}
-          </div>
-        )}
-
-        {/* 7. الكوبونات */}
-        {activeTab === 'coupons' && (
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
-              <Tag className="w-5 h-5 text-teal-600" /> سياسة العروض والكوبونات
-            </h2>
-            <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl text-xs space-y-2">
-              <p className="font-bold text-teal-900">قواعد الخصم الحالية في المنصة:</p>
-              <ul className="list-disc list-inside text-slate-600 space-y-1">
-                <li>نسبة الخصم للمريض: 15% من قيمة الكشف.</li>
-                <li>سقف الخصم الأقصى: <strong>$0.50</strong> فقط لكل حجز.</li>
-                <li>صافي ربح المنصة المحمي: لا يقل عن <strong>$1.50</strong> لكل كشف منجز.</li>
-                <li>صلاحية الكوبون: يُستهلك لمرة واحدة فقط ويُحظر تلقائياً بعد استخدامه.</li>
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {/* 8. إعدادات المنصة */}
-        {activeTab === 'settings' && (
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4 max-w-xl">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
-              <Settings className="w-5 h-5 text-teal-600" /> الحسابات البنكية لاستلام العمولات
-            </h2>
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-slate-50 border rounded-xl flex justify-between items-center">
-                <span>🏦 حساب بنك الكريمي (حاسب):</span>
-                <strong className="font-mono text-slate-900">3001234567</strong>
-              </div>
-              <div className="p-3 bg-slate-50 border rounded-xl flex justify-between items-center">
-                <span>🟢 محفظة ون كاش (OneCash):</span>
-                <strong className="font-mono text-slate-900">770000000</strong>
-              </div>
-            </div>
           </div>
         )}
 
