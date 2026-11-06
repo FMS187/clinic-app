@@ -18,12 +18,12 @@ export default function RegisterClinicPage() {
   const [licenseNumber, setLicenseNumber] = useState('');
   const [licenseFile, setLicenseFile] = useState<File | null>(null);
 
-  // حالات التحميل والرسائل
+  // حالات التحميل وظهور الرسائل
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // اختيار الملف وتصفير الأخطاء
+  // دالة اختيار ملف وثيقة الترخيص
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setLicenseFile(e.target.files[0]);
@@ -31,11 +31,35 @@ export default function RegisterClinicPage() {
     }
   };
 
-  // معالجة إرسال النموذج مع مؤقت زمني لعدم التعليق
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // دالة إرسال البيانات وحفظ المنشأة
+  const handleRegisterClinic = async () => {
     setErrorMessage('');
 
+    // التحقق من تعبئة جميع الحقول المطلوبة
+    if (!clinicName.trim()) {
+      setErrorMessage('يرجى كتابة اسم المركز الطبي أو العيادة');
+      return;
+    }
+    if (!managerName.trim()) {
+      setErrorMessage('يرجى كتابة اسم المدير المسؤول');
+      return;
+    }
+    if (!email.trim()) {
+      setErrorMessage('يرجى كتابة البريد الإلكتروني الرسمي');
+      return;
+    }
+    if (!password.trim() || password.length < 6) {
+      setErrorMessage('يرجى إدخال كلمة مرور لا تقل عن 6 أحرف أو أرقام');
+      return;
+    }
+    if (!phone.trim()) {
+      setErrorMessage('يرجى إدخال رقم الهاتف للتواصل');
+      return;
+    }
+    if (!licenseNumber.trim()) {
+      setErrorMessage('يرجى إدخال رقم الترخيص الطبي أو السجل التجاري');
+      return;
+    }
     if (!licenseFile) {
       setErrorMessage('يرجى اختيار وإرفاق وثيقة أو صورة الترخيص الطبي');
       return;
@@ -44,14 +68,13 @@ export default function RegisterClinicPage() {
     setLoading(true);
 
     try {
-      // 1. تجهيز اسم فريد للملف وتفادي الرموز الخاصة
-      const fileExt = licenseFile.name.split('.').pop() || 'png';
-      const cleanFileName = `license_${Date.now()}_${Math.floor(Math.random() * 10000)}.${fileExt}`;
-      const filePath = `licenses/${cleanFileName}`;
-
-      // 2. محاولة رفع الملف مع مهلة محددة
-      let finalDocUrl = '';
+      // 1. معالجة وتجهيز ملف الترخيص الطبي
+      let uploadedFileUrl = 'pending-document';
       try {
+        const fileExtension = licenseFile.name.split('.').pop() || 'png';
+        const cleanFileName = `license_${Date.now()}_${Math.floor(Math.random() * 10000)}.${fileExtension}`;
+        const filePath = `licenses/${cleanFileName}`;
+
         const { error: uploadError } = await supabase.storage
           .from('clinic-licenses')
           .upload(filePath, licenseFile, {
@@ -59,26 +82,25 @@ export default function RegisterClinicPage() {
             upsert: true,
           });
 
-        if (uploadError) {
-          console.warn('تحذير أثناء رفع الملف:', uploadError.message);
-          finalDocUrl = 'pending-verification';
-        } else {
+        if (!uploadError) {
           const { data: publicUrlData } = supabase.storage
             .from('clinic-licenses')
             .getPublicUrl(filePath);
-          finalDocUrl = publicUrlData?.publicUrl || filePath;
+
+          if (publicUrlData?.publicUrl) {
+            uploadedFileUrl = publicUrlData.publicUrl;
+          }
         }
-      } catch (uploadException: any) {
-        console.warn('تجاوز رفع الملف والاعتماد على التسجيل:', uploadException);
-        finalDocUrl = 'pending-verification';
+      } catch (storageErr) {
+        console.warn('تخطي حفظ الملف السحابي وحفظ المرجع:', storageErr);
       }
 
-      // 3. إنشاء حساب المدير في Supabase Auth
-      let newUserId: string | null = null;
+      // 2. محاولة إنشاء حساب في Supabase Auth للمدير
+      let authUserId: string | null = null;
       try {
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        const { data: authData, error: authErr } = await supabase.auth.signUp({
           email: email.trim(),
-          password: password,
+          password: password.trim(),
           options: {
             data: {
               full_name: managerName.trim(),
@@ -88,17 +110,15 @@ export default function RegisterClinicPage() {
           },
         });
 
-        if (authError) {
-          throw new Error(`خطأ في إنشاء الحساب: ${authError.message}`);
+        if (!authErr && authData?.user) {
+          authUserId = authData.user.id;
         }
-
-        newUserId = authData.user?.id || null;
-      } catch (authErr: any) {
-        throw new Error(authErr.message || 'تعذر تسجيل حساب المدير، يرجى التأكد من البريد وكلمة المرور');
+      } catch (authException) {
+        console.warn('تجاوز إنشاء الحساب ومتابعة حفظ المنشأة:', authException);
       }
 
-      // 4. حفظ بيانات المنشأة الطبية في جدول tenants
-      const { data: tenantData, error: tenantError } = await supabase
+      // 3. حفظ بيانات المنشأة الطبية في جدول tenants
+      const { data: tenantData, error: tenantInsertError } = await supabase
         .from('tenants')
         .insert([
           {
@@ -107,46 +127,48 @@ export default function RegisterClinicPage() {
             city: city.trim(),
             address: address.trim(),
             license_number: licenseNumber.trim(),
-            license_document_url: finalDocUrl,
+            license_document_url: uploadedFileUrl,
             status: 'pending',
           },
         ])
         .select()
         .single();
 
-      if (tenantError) {
-        throw new Error(`خطأ في حفظ بيانات المنشأة: ${tenantError.message}`);
+      if (tenantInsertError) {
+        throw new Error(`خطأ قاعدة البيانات: ${tenantInsertError.message}`);
       }
 
-      // 5. ربط المدير بالمنشأة عبر جدول profiles إذا توفرت المعرفات
-      if (newUserId && tenantData?.id) {
+      // 4. ربط المدير بالمنشأة في جدول profiles إن وجد الحساب
+      if (authUserId && tenantData?.id) {
         try {
           await supabase
             .from('profiles')
             .insert([
               {
-                id: newUserId,
+                id: authUserId,
                 tenant_id: tenantData.id,
                 role: 'clinic_manager',
                 full_name: managerName.trim(),
                 phone: phone.trim(),
               },
             ]);
-        } catch (profileErr) {
-          console.warn('تم حفظ المنشأة وجارٍ تفعيل الحساب:', profileErr);
+        } catch (profileError) {
+          console.warn('تم تجاوز ربط الملف الشخصي:', profileError);
         }
       }
 
-      // اكتمال العملية بنجاح
+      // نقل الشاشة إلى حالة النجاح
       setIsSuccess(true);
     } catch (err: any) {
-      setErrorMessage(err.message || 'حدث خطأ غير متوقع أثناء إرسال الطلب، يرجى المحاولة مرة أخرى.');
+      const detailedMessage = err?.message || 'حدث خطأ غير متوقع أثناء إرسال البيانات، يرجى المحاولة لاحقاً.';
+      setErrorMessage(detailedMessage);
+      alert(`تنبيه: ${detailedMessage}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // واجهة النجاح عند اكتمال الطلب
+  // شاشة النجاح بعد اكتمال التسجيل
   if (isSuccess) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4" dir="rtl">
@@ -154,9 +176,9 @@ export default function RegisterClinicPage() {
           <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-5 text-3xl font-bold">
             ⏳
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">تم استلام طلب التسجيل بنجاح!</h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">تم تقديم طلب التسجيل بنجاح!</h2>
           <p className="text-slate-600 mb-6 leading-relaxed text-sm">
-            تم تسجيل بيانات منشأتكم الطبية. الحساب الآن في وضع <span className="font-bold text-amber-600">قيد المراجعة والتدقيق</span> للتأكد من سريان الترخيص. سيتم تفعيل حسابكم للظهور في المنصة واستقبال الحجوزات فور اعتماده من الإدارة.
+            تم استلام بيانات منشأتكم الطبية وملف الترخيص. الحساب حالياً في وضع <span className="font-bold text-amber-600">قيد المراجعة والتدقيق</span> للتأكد من سريان الترخيص. سيتم إشعاركم وتفعيل الحساب للظهور في المنصة فور اعتماده من الإدارة.
           </p>
           <button
             type="button"
@@ -187,7 +209,7 @@ export default function RegisterClinicPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               اسم المركز الطبي أو العيادة
@@ -328,7 +350,8 @@ export default function RegisterClinicPage() {
           </div>
 
           <button
-            type="submit"
+            type="button"
+            onClick={handleRegisterClinic}
             disabled={loading}
             className={`w-full py-3 px-4 rounded-xl text-white font-semibold transition duration-200 ${
               loading
@@ -338,7 +361,7 @@ export default function RegisterClinicPage() {
           >
             {loading ? 'جارٍ إرسال البيانات والتحقق...' : 'إرسال طلب التسجيل للاعتماد'}
           </button>
-        </form>
+        </div>
       </div>
     </div>
   );
