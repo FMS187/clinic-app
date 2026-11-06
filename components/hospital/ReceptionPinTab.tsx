@@ -157,19 +157,19 @@ export default function ReceptionPinTab({
           const netToCollect = Math.max(0, originalFee - discountVal);
 
           // توثيق العملية باسم موظف الاستقبال المباشر
-                    const { error: updateErr } = await supabase
+          const { error: updateErr } = await supabase
             .from('Booking')
             .update({ 
-              status: 'completed'
+              status: 'completed',
+              receptionist_name: activeStaff?.name || 'موظف الاستقبال'
             })
             .eq('id', booking.id);
-
 
           if (!updateErr) {
             setBookings(prev => prev.map(b => b.id === booking.id ? { 
               ...b, 
               status: 'completed',
-              
+              receptionist_name: activeStaff?.name || 'موظف الاستقبال'
             } : b));
 
             setPinResult({
@@ -214,7 +214,7 @@ export default function ReceptionPinTab({
       checkin_pin: generatedPin,
       deposit_amount: 20,
       payment_method: 'cash',
-      
+      receptionist_name: activeStaff?.name || 'موظف الاستقبال'
     };
 
     const { data, error } = await supabase.from('Booking').insert([newRecord]).select();
@@ -264,6 +264,25 @@ export default function ReceptionPinTab({
     window.open(`https://api.whatsapp.com/send?phone=${platformSupportPhone}&text=${cancelMsg}`, '_blank');
   };
 
+  // في حال لم يقم الموظف بتسجيل دخوله بعد، نعرض له شاشة الدخول أولاً
+  if (!activeStaff) {
+    return (
+      <div className="max-w-md mx-auto p-6 bg-slate-900 border border-slate-800 rounded-3xl shadow-xl text-white space-y-4" dir="rtl">
+        <div className="text-center space-y-2">
+          <div className="w-12 h-12 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+            <UserCheck className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold">تسجيل دخول موظف الاستقبال</h2>
+          <p className="text-xs text-slate-400">اختر اسمك من القائمة وأدخل رمز الـ PIN لبدء ورديتك</p>
+        </div>
+
+        {loginError && (
+          <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{loginError}</span>
+          </div>
+        )}
+
         <form onSubmit={handleStaffLogin} className="space-y-4 text-xs">
           <div>
             <label className="block font-bold mb-1">اسم موظف الاستقبال:</label>
@@ -307,7 +326,7 @@ export default function ReceptionPinTab({
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto" dir="rtl">
 
       {/* شريط معلومات الموظف الحالي والوردية */}
       {activeStaff && (
