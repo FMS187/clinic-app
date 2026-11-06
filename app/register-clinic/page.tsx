@@ -27,6 +27,7 @@ export default function RegisterClinicPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setLicenseFile(e.target.files[0]);
+      setErrorMessage('');
     }
   };
 
@@ -34,67 +35,69 @@ export default function RegisterClinicPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+
+    // التحقق المسبق من وجود الملف
+    if (!licenseFile) {
+      setErrorMessage('يرجى إرفاق صورة أو وثيقة الترخيص الطبي الرسمية');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // 1. التأكد من اختيار ملف الترخيص الطبي
-      if (!licenseFile) {
-        throw new Error('يرجى إرفاق صورة أو وثيقة الترخيص الطبي الرسمية');
+      // 1. تنظيف اسم الملف وتهيئته للرفع
+      const fileExtension = licenseFile.name.split('.').pop() || 'png';
+      const cleanFileName = `license_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExtension}`;
+      const filePath = `licenses/${cleanFileName}`;
+
+      // 2. رفع وثيقة الترخيص لمجلد التخزين clinic-licenses
+      const { error: uploadError } = await supabase.storage
+        .from('clinic-licenses')
+        .upload(filePath, licenseFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw new Error(`خطأ أثناء رفع الملف: ${uploadError.message}`);
       }
 
-      // 2. تسجيل الحساب الجديد في Supabase Auth للمدير
+      // 3. استخراج الرابط العام للوثيقة المرفوعة
+      const { data: publicUrlData } = supabase.storage
+        .from('clinic-licenses')
+        .getPublicUrl(filePath);
+
+      const finalDocumentUrl = publicUrlData?.publicUrl || filePath;
+
+      // 4. تسجيل الحساب الجديد في Supabase Auth لمدير المنشأة
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email,
+        email: email.trim(),
         password: password,
         options: {
           data: {
-            full_name: managerName,
-            phone: phone,
+            full_name: managerName.trim(),
+            phone: phone.trim(),
             role: 'clinic_manager',
           },
         },
       });
 
       if (authError) {
-        throw authError;
+        throw new Error(`خطأ في إنشاء الحساب: ${authError.message}`);
       }
 
-      if (!authData.user) {
-        throw new Error('تعذر إتمام التسجيل، يرجى إعادة المحاولة.');
-      }
+      const userId = authData.user?.id;
 
-      const userId = authData.user.id;
-
-      // 3. رفع وثيقة الترخيص لمجلد التخزين clinic-licenses
-      const fileExtension = licenseFile.name.split('.').pop();
-      const uniqueFileName = `${userId}-${Date.now()}.${fileExtension}`;
-      const filePath = `licenses/${uniqueFileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('clinic-licenses')
-        .upload(filePath, licenseFile);
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      // 4. استخراج رابط وثيقة الترخيص
-      const { data: publicUrlData } = supabase.storage
-        .from('clinic-licenses')
-        .getPublicUrl(filePath);
-
-      const finalDocumentUrl = publicUrlData ? publicUrlData.publicUrl : filePath;
-
-      // 5. حفظ المنشأة الطبية في جدول tenants مع حالة قيد المراجعة pending
+      // 5. حفظ بيانات المنشأة الطبية في جدول tenants
       const { data: tenantData, error: tenantError } = await supabase
         .from('tenants')
         .insert([
           {
-            name: clinicName,
-            phone: phone,
-            city: city,
-            address: address,
-            license_number: licenseNumber,
+            name: clinicName.trim(),
+            phone: phone.trim(),
+            city: city.trim(),
+            address: address.trim(),
+            license_number: licenseNumber.trim(),
             license_document_url: finalDocumentUrl,
             status: 'pending',
           },
@@ -103,29 +106,28 @@ export default function RegisterClinicPage() {
         .single();
 
       if (tenantError) {
-        throw tenantError;
+        throw new Error(`خطأ في حفظ بيانات العيادة: ${tenantError.message}`);
       }
 
-      // 6. ربط المدير الحالي بالمنشأة عبر جدول profiles
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: userId,
-            tenant_id: tenantData.id,
-            role: 'clinic_manager',
-            full_name: managerName,
-            phone: phone,
-          },
-        ]);
-
-      if (profileError) {
-        throw profileError;
+      // 6. ربط المدير بالمنشأة عبر جدول profiles إذا كان الحساب قد أُنشئ
+      if (userId && tenantData?.id) {
+        await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: userId,
+              tenant_id: tenantData.id,
+              role: 'clinic_manager',
+              full_name: managerName.trim(),
+              phone: phone.trim(),
+            },
+          ]);
       }
 
+      // إظهار شاشة النجاح
       setIsSuccess(true);
     } catch (err: any) {
-      setErrorMessage(err.message || 'حدث خطأ أثناء إرسال الطلب، يرجى المحاولة مرة أخرى.');
+      setErrorMessage(err.message || 'حدث خطأ غير متوقع أثناء إرسال الطلب، يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -167,7 +169,7 @@ export default function RegisterClinicPage() {
         </div>
 
         {errorMessage && (
-          <div className="mb-6 p-4 bg-red-50 border-r-4 border-red-500 text-red-700 text-sm rounded-lg">
+          <div className="mb-6 p-4 bg-red-50 border-r-4 border-red-500 text-red-700 text-sm rounded-lg font-medium">
             {errorMessage}
           </div>
         )}
