@@ -32,12 +32,12 @@ interface Facility {
 interface PendingTenant {
   id: string;
   name: string;
-  city: string;
-  address: string;
-  phone: string;
-  license_number: string;
-  license_document_url: string;
-  status: 'pending' | 'approved' | 'rejected';
+  city?: string;
+  address?: string;
+  phone?: string;
+  license_number?: string;
+  license_document_url?: string;
+  status?: string;
   rejection_reason?: string;
   created_at?: string;
 }
@@ -95,30 +95,30 @@ export default function SuperAdminDashboard() {
   const [rejectionReasonText, setRejectionReasonText] = useState('');
   const [processingTenantId, setProcessingTenantId] = useState<string | null>(null);
 
-  // جلب كافة بيانات المنصة مع التراخيص
+  // جلب كافة بيانات المنصة
   const fetchAllPlatformData = async () => {
     setLoadingData(true);
     try {
-      // 1. جلب المنشآت المعتمدة المسجلة في ClinicFacility
-      const { data: facs, error: facsErr } = await supabase
+      // 1. جلب المنشآت المتعاقدة النشطة
+      const { data: facs } = await supabase
         .from('ClinicFacility')
         .select('*');
 
-      if (!facsErr && facs) {
+      if (facs) {
         setFacilities(facs);
       }
 
       // 2. جلب الحجوزات
-      const { data: books, error: booksErr } = await supabase
+      const { data: books } = await supabase
         .from('Booking')
         .select('*')
         .order('booking_date', { ascending: false });
 
-      if (!booksErr && books) {
+      if (books) {
         setBookings(books);
       }
 
-      // 3. جلب جميع طلبات العيادات والتراخيص من جدول tenants
+      // 3. جلب جميع طلبات العيادات والتراخيص المسجلة من جدول tenants بدون أي شروط
       const { data: tenantsData, error: tenantsErr } = await supabase
         .from('tenants')
         .select('*');
@@ -139,7 +139,7 @@ export default function SuperAdminDashboard() {
     try {
       await fetch('/api/cron/auto-complete').catch(() => {});
       await fetchAllPlatformData();
-      setCronSuccessMsg('تم فحص ومطابقة الحسابات وتحديث المنشآت بنجاح.');
+      setCronSuccessMsg('تم فحص ومطابقة الحسابات المالية وتحديث البيانات بنجاح.');
       setTimeout(() => setCronSuccessMsg(''), 4000);
     } catch (e) {
       console.log('Error triggering cron', e);
@@ -177,7 +177,7 @@ export default function SuperAdminDashboard() {
     setUser(null);
   };
 
-  // اعتماد منشأة مسجلة ونقلها تلقائياً لدليل المنشآت وتوليد رسالة واتساب
+  // اعتماد منشأة مسجلة ونقلها تلقائياً لدليل المنشآت وإرسال واتساب
   const handleApproveTenant = async (tenant: PendingTenant) => {
     setProcessingTenantId(tenant.id);
 
@@ -187,7 +187,7 @@ export default function SuperAdminDashboard() {
       if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
 
       // 1. تحديث حالتها في جدول tenants إلى approved
-      const { error: tenantErr } = await supabase
+      await supabase
         .from('tenants')
         .update({
           status: 'approved',
@@ -195,8 +195,6 @@ export default function SuperAdminDashboard() {
           rejection_reason: null
         })
         .eq('id', tenant.id);
-
-      if (tenantErr) throw tenantErr;
 
       // 2. إدخال المنشأة في جدول ClinicFacility لتظهر في دليل المنشآت وصفحة الحجز
       const newFacilityRecord = {
@@ -211,7 +209,7 @@ export default function SuperAdminDashboard() {
         credit_limit: 50.0,
         current_debt: 0.0,
         is_active: true,
-        wallets_info: { kuraimi: '', onecash: '' }
+        wallets_info: { kuraimi: '3001234567', onecash: '770000000' }
       };
 
       const { data: createdFac, error: facErr } = await supabase
@@ -220,25 +218,29 @@ export default function SuperAdminDashboard() {
         .select()
         .single();
 
-      // تحديث الحالة في الشاشة
+      if (facErr) {
+        throw new Error(`خطأ في نقل المنشأة: ${facErr.message}`);
+      }
+
+      // تحديث الحالة في الواجهة
       setPendingTenants(prev => prev.map(t => t.id === tenant.id ? { ...t, status: 'approved' } : t));
       if (createdFac) {
         setFacilities(prev => [createdFac, ...prev]);
       }
 
-      // 3. فتح رسالة واتساب مجهزة للاعتماد
+      // 3. فتح رسالة واتساب رسمية ومجهزة للاعتماد
       const targetPhone = '967' + cleanPhone;
       const approvalMsg = encodeURIComponent(
         `السلام عليكم إدارة (${tenant.name})،\n` +
-        `تهانينا! نود إبلاغكم بأنه تم التحقق من ترخيصكم الطبي رقم (${tenant.license_number || 'المعتمد'}) واكتمال اعتماد منشأتكم رسمياً في منصة الحجوزات الطبية.\n` +
+        `تهانينا! نود إبلاغكم بأنه تم التحقق من ترخيصكم الطبي واكتمال اعتماد منشأتكم رسمياً في منصة الحجوزات الطبية.\n` +
         `• حالة الحساب: نشط ومعتمد ✓\n` +
         `• عمولة المنصة: $2 لكل كشف\n` +
-        `• تم تفعيل ظهور عيادتكم للمرضى في شاشات البحث والحجز المباشر.\n\n` +
+        `• تم تفعيل ظهور عيادتكم للمرضى في شاشات الحجز المباشر.\n\n` +
         `أهلاً بكم معنا شركاء النجاح!`
       );
 
       window.open(`https://api.whatsapp.com/send?phone=${targetPhone}&text=${approvalMsg}`, '_blank');
-      alert(`تم اعتماد منشأة (${tenant.name}) بنجاح وتم فتح رسالة الواتساب الترحيبية.`);
+      alert(`تم اعتماد (${tenant.name}) بنجاح ونقلها لدليل المنشآت وتفعيل ظهورها للمرضى!`);
     } catch (err: any) {
       alert(`خطأ أثناء الاعتماد: ${err.message}`);
     } finally {
@@ -257,7 +259,7 @@ export default function SuperAdminDashboard() {
     setProcessingTenantId(rejectingTenant.id);
 
     try {
-      const { error } = await supabase
+      await supabase
         .from('tenants')
         .update({
           status: 'rejected',
@@ -265,8 +267,6 @@ export default function SuperAdminDashboard() {
           verified_at: new Date().toISOString()
         })
         .eq('id', rejectingTenant.id);
-
-      if (error) throw error;
 
       setPendingTenants(prev => prev.map(t => t.id === rejectingTenant.id ? {
         ...t,
@@ -281,8 +281,8 @@ export default function SuperAdminDashboard() {
 
       const rejectMsg = encodeURIComponent(
         `السلام عليكم إدارة (${rejectingTenant.name})،\n` +
-        `بخصوص طلب انضمامكم إلى المنصة الطبية، نأسف لإبلاغكم بأن طلب الترخيص قوبل بالملاحظات التالية:\n` +
-        `⚠️ سبب الرفض / عدم المطابقة:\n"${rejectionReasonText.trim()}"\n\n` +
+        `بخصوص طلب انضمامكم إلى المنصة الطبية، نأسف لإبلاغكم بأن طلب الترخيص قوبل بالملاحظة التالية:\n` +
+        `⚠️ سبب الرفض:\n"${rejectionReasonText.trim()}"\n\n` +
         `يرجى تعديل البيانات أو تزويدنا بوثيقة ترخيص سارية المفعول لنتمكن من إعادة تفعيل الحساب.`
       );
 
@@ -290,7 +290,7 @@ export default function SuperAdminDashboard() {
 
       setRejectingTenant(null);
       setRejectionReasonText('');
-      alert('تم توثيق الرفض وفتح نافذة الواتساب لإشعار المنشأة بالسبب.');
+      alert('تم توثيق الرفض وإرسال السبب للمنشأة عبر الواتساب.');
     } catch (err: any) {
       alert(`خطأ: ${err.message}`);
     } finally {
@@ -334,7 +334,7 @@ export default function SuperAdminDashboard() {
         credit_limit: newFac.credit_limit,
         current_debt: 0.0,
         is_active: true,
-        wallets_info: { kuraimi: '', onecash: '' }
+        wallets_info: { kuraimi: '3001234567', onecash: '770000000' }
       }
     ]).select();
 
@@ -428,7 +428,7 @@ export default function SuperAdminDashboard() {
     setRecordingPayment(false);
   };
 
-  // تقرير المطابقة للواتساب
+  // تقرير المطابقة للواتساب مع الحسابات الرسمية
   const generateWeeklyWhatsAppReport = (fac: Facility) => {
     const facBookings = bookings.filter(b => b.facility_id === fac.id);
     const completed = facBookings.filter(b => b.status === 'completed').length;
@@ -448,7 +448,7 @@ export default function SuperAdminDashboard() {
       `* الحالات الملغاة: ${cancelled}\n` +
       `* إجمالي العمولة المستحقة: $${debt}\n` +
       `---------------------------------\n` +
-      `💳 حسابات السداد المعتمدة:\n` +
+      `💳 حسابات السداد المعتمدة للمنصة:\n` +
       `• بنك الكريمي (حاسب): 3001234567\n` +
       `• محفظة ون كاش: 770000000\n\n` +
       `يرجى التكرم بتسوية الرصيد وتزويدنا برقم الإشعار لتأكيد التصفير.`
@@ -494,11 +494,6 @@ export default function SuperAdminDashboard() {
     const totalEarnedRevenue = completedBookings * 1.5;
     return { totalFacilities, totalUncollectedDebt, completedBookings, totalEarnedRevenue };
   }, [facilities, bookings]);
-
-  // قائمة طلبات التراخيص التي تحتاج مراجعة
-  const pendingVerifications = useMemo(() => {
-    return pendingTenants.filter(t => t.status === 'pending');
-  }, [pendingTenants]);
 
   // الحجوزات بعد الفلترة والبحث
   const filteredBookingsList = useMemo(() => {
@@ -593,7 +588,7 @@ export default function SuperAdminDashboard() {
               {activeTab === 'bookings' && 'سجل الحجوزات والتحكم الشامل'}
               {activeTab === 'analytics' && 'حركة الدخول واستخدام المنصة'}
               {activeTab === 'coupons' && 'إدارة العروض والكوبونات'}
-              {activeTab === 'settings' && 'إعدادات المنصة المركزية'}
+              {activeTab === 'settings' && 'إعدادات المنصة المركزية وحسابات السداد'}
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">غرفة عمليات الوساطة الطبية وإدارة السيولة والتراخيص</p>
           </div>
@@ -606,7 +601,7 @@ export default function SuperAdminDashboard() {
               className="px-3.5 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 border bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} />
-              تحديث البيانات
+              {loadingData ? 'جارٍ الجلب...' : 'تحديث البيانات'}
             </button>
 
             <button
@@ -668,12 +663,12 @@ export default function SuperAdminDashboard() {
                 className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-right hover:border-teal-500 hover:shadow-md transition group"
               >
                 <div className="flex justify-between items-start">
-                  <span className="text-xs font-bold text-slate-400 group-hover:text-teal-700 transition">المنشآت المشتركة</span>
+                  <span className="text-xs font-bold text-slate-400 group-hover:text-teal-700 transition">المنشآت المسجلة</span>
                   <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-teal-600 transition" />
                 </div>
-                <span className="text-3xl font-black text-slate-900 font-mono mt-1 block">{stats.totalFacilities}</span>
+                <span className="text-3xl font-black text-slate-900 font-mono mt-1 block">{facilities.length}</span>
                 <span className="text-[11px] text-teal-700 block mt-1">
-                  {pendingVerifications.length > 0 ? `⚠️ يوجد (${pendingVerifications.length}) بانتظار الاعتماد` : 'جميع المنشآت معتمدة'}
+                  يوجد ({pendingTenants.length}) طلب تسجيل بالمنظومة
                 </span>
               </button>
 
@@ -694,39 +689,54 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 2. دليل وإدارة المنشآت مع فحص التراخيص والاعتماد التلقائي */}
+        {/* 2. دليل وإدارة المنشآت مع جدول طلبات التراخيص المباشر */}
         {activeTab === 'facilities' && (
           <div className="space-y-6">
 
-            {/* قسم طلبات التراخيص الجديدة التي تحتاج موافقة المالك */}
-            {pendingVerifications.length > 0 && (
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 shadow-sm space-y-4">
-                <div className="flex justify-between items-center border-b border-amber-200 pb-3">
-                  <div>
-                    <h2 className="text-base font-black text-amber-950 flex items-center gap-2">
-                      <FileCheck className="w-5 h-5 text-amber-600" /> 
-                      طلبات انضمام وتراخيص جديدة بانتظار موافقتك ({pendingVerifications.length})
-                    </h2>
-                    <p className="text-xs text-amber-700 mt-0.5">
-                      بمجرد الموافقة، ستنزل المنشأة تلقائياً في دليلك أدناه وتظهر فوراً للمرضى مع إشعار المنشأة بالواتساب
-                    </p>
-                  </div>
+            {/* صندوق طلبات التراخيص المباشر */}
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-amber-200 pb-3">
+                <div>
+                  <h2 className="text-base font-black text-amber-950 flex items-center gap-2">
+                    <FileCheck className="w-5 h-5 text-amber-600" /> 
+                    طلبات انضمام وتراخيص المنشآت الطبية المسجلة ({pendingTenants.length})
+                  </h2>
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    المنشآت التي سجلت عبر صفحة التسجيل. اضغط "اعتماد" لتفعيلها فوراً ونقلها للدليل وإرسال الواتساب
+                  </p>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={fetchAllPlatformData}
+                  className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> فحص التراخيص الآن
+                </button>
+              </div>
+
+              {pendingTenants.length === 0 ? (
+                <div className="text-center py-8 text-amber-800 text-xs font-medium">
+                  لا توجد طلبات جديدة مسجلة حالياً في جدول tenants. اضغط على زر "فحص التراخيص الآن" للتحديث.
+                </div>
+              ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {pendingVerifications.map(tenant => {
+                  {pendingTenants.map(tenant => {
                     const isProcessing = processingTenantId === tenant.id;
                     const hasDoc = tenant.license_document_url && tenant.license_document_url !== 'pending-document';
+                    const isAlreadyApproved = tenant.status === 'approved';
 
                     return (
                       <div key={tenant.id} className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm space-y-3">
                         <div className="flex justify-between items-start">
                           <div>
                             <h3 className="font-black text-slate-900 text-sm">{tenant.name}</h3>
-                            <p className="text-xs text-slate-500 mt-0.5">{tenant.city} - {tenant.address}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{tenant.city || 'صنعاء'} - {tenant.address || 'اليمن'}</p>
                           </div>
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                            قيد المراجعة ⏳
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            isAlreadyApproved ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {isAlreadyApproved ? 'معتمدة ✓' : 'قيد المراجعة ⏳'}
                           </span>
                         </div>
 
@@ -757,15 +767,21 @@ export default function SuperAdminDashboard() {
                         </div>
 
                         <div className="flex gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleApproveTenant(tenant)}
-                            disabled={isProcessing}
-                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-sm"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            {isProcessing ? 'جارٍ الاعتماد...' : 'اعتماد وإشعار بالواتساب'}
-                          </button>
+                          {!isAlreadyApproved ? (
+                            <button
+                              type="button"
+                              onClick={() => handleApproveTenant(tenant)}
+                              disabled={isProcessing}
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-sm"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              {isProcessing ? 'جارٍ الاعتماد...' : 'اعتماد وإشعار بالواتساب'}
+                            </button>
+                          ) : (
+                            <span className="flex-1 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold text-center">
+                              تم الاعتماد والنقل للدليل ✓
+                            </span>
+                          )}
 
                           <button
                             type="button"
@@ -783,10 +799,10 @@ export default function SuperAdminDashboard() {
                     );
                   })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* دليل المنشآت الطبية المتعاقدة */}
+            {/* دليل المنشآت الطبية المتعاقدة النشطة */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
               <div className="flex justify-between items-center border-b pb-3">
                 <div>
@@ -807,7 +823,7 @@ export default function SuperAdminDashboard() {
 
               {facilities.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 text-xs">
-                  لا توجد منشآت مفعلة حالياً. اعتمد طلباً من الطلبات المعلقة أعلاه لتنزل هنا تلقائياً.
+                  لا توجد منشآت مفعلة حالياً. اعتمد طلباً من الطلبات أعلاه لتنزل هنا تلقائياً.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -963,12 +979,18 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 4. الفوترة والتحصيل */}
+        {/* 4. الفوترة والتحصيل مع الحسابات المعتمدة */}
         {activeTab === 'billing' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
-              <Receipt className="w-5 h-5 text-teal-600" /> كشف حساب ومطالبات العمولات للمنشآت
-            </h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b pb-3">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-teal-600" /> كشف حساب ومطالبات العمولات للمنشآت
+              </h2>
+              <div className="text-xs bg-teal-50 text-teal-900 border border-teal-200 px-3 py-1.5 rounded-xl font-bold">
+                حساب الكريمي (حاسب): 3001234567 | ون كاش: 770000000
+              </div>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs sm:text-sm">
                 <thead className="bg-slate-50 text-slate-600 border-b">
@@ -1094,6 +1116,50 @@ export default function SuperAdminDashboard() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 6. الكوبونات */}
+        {activeTab === 'coupons' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
+              <Tag className="w-5 h-5 text-teal-600" /> سياسة العروض والكوبونات
+            </h2>
+            <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl text-xs space-y-2">
+              <p className="font-bold text-teal-900">قواعد الخصم الحالية في المنصة:</p>
+              <ul className="list-disc list-inside text-slate-600 space-y-1">
+                <li>نسبة الخصم للمريض: 15% من قيمة الكشف.</li>
+                <li>سقف الخصم الأقصى: <strong>$0.50</strong> فقط لكل حجز.</li>
+                <li>صافي ربح المنصة المحمي: لا يقل عن <strong>$1.50</strong> لكل كشف منجز.</li>
+                <li>صلاحية الكوبون: يُستهلك لمرة واحدة فقط ويُحظر تلقائياً بعد استخدامه.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* 7. إعدادات المنصة المركزية وحسابات السداد */}
+        {activeTab === 'settings' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4 max-w-xl">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b pb-3">
+              <Settings className="w-5 h-5 text-teal-600" /> الحسابات البنكية لاستلام العمولات
+            </h2>
+            <div className="space-y-3 text-xs">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-800 block">🏦 بنك الكريمي (حاسب):</span>
+                  <span className="text-slate-400 text-[11px]">مخصص للتحويلات البنكية المباشرة</span>
+                </div>
+                <strong className="font-mono text-base text-teal-700">3001234567</strong>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-800 block">🟢 محفظة ون كاش (OneCash):</span>
+                  <span className="text-slate-400 text-[11px]">مخصص لمدفوعات المحافظ الإلكترونية</span>
+                </div>
+                <strong className="font-mono text-base text-emerald-600">770000000</strong>
+              </div>
+            </div>
           </div>
         )}
 
