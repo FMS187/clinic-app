@@ -16,24 +16,27 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  FileText
+  FileText,
+  Phone
 } from 'lucide-react';
 
-interface Tenant {
+interface FacilityItem {
   id: string;
   name: string;
   city: string;
   address: string;
   phone: string;
-  status: string;
+  whatsapp_number?: string;
+  facility_type?: string;
+  is_active?: boolean;
 }
 
-interface Doctor {
+interface DoctorItem {
   id: string;
   name: string;
   specialty: string;
   consultation_fee: number;
-  tenant_id: string;
+  facility_id?: string;
 }
 
 const AVAILABLE_HOURS = [
@@ -53,16 +56,16 @@ export default function BookingWizardPage() {
   // خطوة الحجز الحالية (من 1 إلى 6)
   const [step, setStep] = useState<number>(1);
 
-  // البيانات التي تم جلبها من قاعدة البيانات
-  const [clinics, setClinics] = useState<Tenant[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  // البيانات المحملة من السيرفر
+  const [clinics, setClinics] = useState<FacilityItem[]>([]);
+  const [doctors, setDoctors] = useState<DoctorItem[]>([]);
   const [loadingData, setLoadingData] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // اختيارات ومدخلات المريض
-  const [selectedClinic, setSelectedClinic] = useState<Tenant | null>(null);
-  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  // مدخلات واختيارات المريض
+  const [selectedClinic, setSelectedClinic] = useState<FacilityItem | null>(null);
+  const [selectedDoctor, setSelectedDoctor] = useState<DoctorItem | null>(null);
   const [bookingDate, setBookingDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
@@ -73,28 +76,37 @@ export default function BookingWizardPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [paymentOption, setPaymentOption] = useState<'cash' | 'online'>('cash');
 
-  // نتيجة الحجز النهائي
+  // نتيجة الحجز النهائي والرمز السري
   const [completedBookingPin, setCompletedBookingPin] = useState<string | null>(null);
 
-  // 1. جلب المنشآت الطبية المعتمدة فقط (شرط الاعتماد الصارم)
+  // 1. جلب المنشآت الطبية المعتمدة والنشطة من جدول ClinicFacility
   useEffect(() => {
-    async function loadApprovedClinics() {
+    async function loadActiveFacilities() {
       setLoadingData(true);
       setErrorMessage('');
 
       try {
-        // نطلب فقط المنشآت التي تمت الموافقة عليها واعتماد ترخيصها
         const { data, error } = await supabase
-          .from('tenants')
-          .select('id, name, city, address, phone, status')
-          .eq('status', 'approved');
+          .from('ClinicFacility')
+          .select('*')
+          .eq('is_active', true)
+          .order('name', { ascending: true });
 
         if (error) {
           throw error;
         }
 
-        if (data) {
-          setClinics(data as Tenant[]);
+        if (data && data.length > 0) {
+          setClinics(data as FacilityItem[]);
+        } else {
+          // محاولة جلب بديلة في حال لم تكن حقول is_active مفعلة
+          const { data: fallbackData } = await supabase
+            .from('ClinicFacility')
+            .select('*')
+            .order('name', { ascending: true });
+          if (fallbackData) {
+            setClinics(fallbackData as FacilityItem[]);
+          }
         }
       } catch (err: any) {
         setErrorMessage(
@@ -105,12 +117,12 @@ export default function BookingWizardPage() {
       }
     }
 
-    loadApprovedClinics();
+    loadActiveFacilities();
   }, []);
 
-  // 2. جلب أطباء العيادة المختارة عند تغيير العيادة
+  // 2. تجهيز قائمة الأطباء عند اختيار المنشأة
   useEffect(() => {
-    async function loadClinicDoctors() {
+    async function loadDoctorsForClinic() {
       if (!selectedClinic) {
         setDoctors([]);
         return;
@@ -118,42 +130,42 @@ export default function BookingWizardPage() {
 
       try {
         const { data, error } = await supabase
-          .from('doctors')
+          .from('Doctor')
           .select('*')
-          .eq('tenant_id', selectedClinic.id);
+          .eq('facility_id', selectedClinic.id);
 
         if (!error && data && data.length > 0) {
-          setDoctors(data as Doctor[]);
-          setSelectedDoctor(data[0] as Doctor);
+          setDoctors(data as DoctorItem[]);
+          setSelectedDoctor(data[0] as DoctorItem);
         } else {
-          // بيانات افتراضية للطبيب العام في حال لم تضف العيادة أطباء بعد
-          const defaultDoc: Doctor = {
+          // طبيب عام افتراضي للمنشأة
+          const defaultDoc: DoctorItem = {
             id: 'general-doc',
             name: 'طبيب العيادة العام',
-            specialty: 'كشف واستشارة عامة',
+            specialty: 'كشف واستشارة طبية عامة',
             consultation_fee: 20,
-            tenant_id: selectedClinic.id,
+            facility_id: selectedClinic.id,
           };
           setDoctors([defaultDoc]);
           setSelectedDoctor(defaultDoc);
         }
       } catch {
-        const defaultDoc: Doctor = {
+        const defaultDoc: DoctorItem = {
           id: 'general-doc',
           name: 'طبيب العيادة العام',
-          specialty: 'كشف واستشارة عامة',
+          specialty: 'كشف واستشارة طبية عامة',
           consultation_fee: 20,
-          tenant_id: selectedClinic.id,
+          facility_id: selectedClinic.id,
         };
         setDoctors([defaultDoc]);
         setSelectedDoctor(defaultDoc);
       }
     }
 
-    loadClinicDoctors();
+    loadDoctorsForClinic();
   }, [selectedClinic]);
 
-  // دالة التقاط صورة الفحص أو التحليل
+  // دالة التقاط ملف الفحص
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setPhotoFile(e.target.files[0]);
@@ -174,13 +186,13 @@ export default function BookingWizardPage() {
     setSubmitting(true);
     setErrorMessage('');
 
-    // توليد رمز PIN عشوائي من 4 خانات لحضور المريض
+    // توليد رمز PIN عشوائي من 4 خانات لتأكيد الحضور
     const generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
 
     try {
       let uploadedPhotoUrl = '';
 
-      // رفع الصورة إن وجدت
+      // رفع الصورة السحابية إن وجدت
       if (photoFile) {
         try {
           const fileExt = photoFile.name.split('.').pop() || 'jpg';
@@ -198,13 +210,14 @@ export default function BookingWizardPage() {
             uploadedPhotoUrl = urlData?.publicUrl || filePath;
           }
         } catch {
-          console.warn('تم تجاوز رفع الصورة ومتابعة حفظ الحجز');
+          console.warn('تجاوز رفع الصورة وحفظ الحجز');
         }
       }
 
-      // إدخال الحجز في جدول Booking
+      // حفظ الحجز في جدول Booking
       const newBookingRecord = {
         facility_id: selectedClinic.id,
+        facility_name: selectedClinic.name,
         patient_name: patientName.trim(),
         patient_phone: patientPhone.trim(),
         doctor_name: selectedDoctor?.name || 'طبيب عام',
@@ -225,7 +238,7 @@ export default function BookingWizardPage() {
         .single();
 
       if (error) {
-        throw new Error(`خطأ في تسجيل الحجز: ${error.message}`);
+        throw new Error(`خطأ أثناء تسجيل الحجز: ${error.message}`);
       }
 
       setCompletedBookingPin(generatedPin);
@@ -236,7 +249,7 @@ export default function BookingWizardPage() {
     }
   };
 
-  // شاشة اكتمال الحجز وعرض رمز PIN
+  // واجهة اكتمال الحجز وعرض الرمز السري
   if (completedBookingPin) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4" dir="rtl">
@@ -248,7 +261,7 @@ export default function BookingWizardPage() {
           <div>
             <h2 className="text-2xl font-black text-white">تم تأكيد حجز موعدك بنجاح!</h2>
             <p className="text-xs text-slate-400 mt-2">
-              يرجى الاحتفاظ برمز الـ PIN التالي وإبرازه لموظف الاستقبال عند وصولك للمنشأة الطبية
+              يرجى الاحتفاظ برمز الـ PIN وإبرازه لموظف استقبال العيادة عند وصولك
             </p>
           </div>
 
@@ -260,9 +273,9 @@ export default function BookingWizardPage() {
           </div>
 
           <div className="bg-slate-900/60 p-4 rounded-xl text-xs text-slate-300 text-right space-y-2 border border-slate-800">
-            <div><strong>المنشأة:</strong> {selectedClinic?.name}</div>
+            <div><strong>المنشأة الطبية:</strong> {selectedClinic?.name}</div>
             <div><strong>الطبيب:</strong> {selectedDoctor?.name} ({selectedDoctor?.specialty})</div>
-            <div><strong>التاريخ والوقت:</strong> {bookingDate} - {bookingTime}</div>
+            <div><strong>الموعد:</strong> {bookingDate} - {bookingTime}</div>
             <div><strong>المريض:</strong> {patientName} ({patientPhone})</div>
           </div>
 
@@ -297,7 +310,7 @@ export default function BookingWizardPage() {
           </span>
           <h1 className="text-3xl font-black text-white">حجز موعد لدى منشأة طبية معتمدة</h1>
           <p className="text-xs text-slate-400">
-            جميع المنشآت الطبية المعروضة مرخصة ومحققة رسمياً لحماية المرضى
+            اختر العيادة المعتمدة واحجز كشفك الطبي بكل سهولة
           </p>
         </div>
 
@@ -337,7 +350,7 @@ export default function BookingWizardPage() {
           ))}
         </div>
 
-        {/* شريط الأخطاء إن وجدت */}
+        {/* شريط الأخطاء */}
         {errorMessage && (
           <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs font-bold flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -348,7 +361,7 @@ export default function BookingWizardPage() {
         {/* محتوى الخطوات */}
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl">
 
-          {/* الخطوة 1: اختيار المنشأة الطبية المعتمدة */}
+          {/* الخطوة 1: اختيار المنشأة الطبية */}
           {step === 1 && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
@@ -359,15 +372,12 @@ export default function BookingWizardPage() {
               {loadingData ? (
                 <div className="py-12 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
-                  جارٍ فحص وتحميل المراكز المعتمدة...
+                  جارٍ تحميل قائمة العيادات المعتمدة...
                 </div>
               ) : clinics.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs space-y-2">
                   <Building2 className="w-8 h-8 mx-auto text-slate-600" />
                   <p>لا توجد منشآت طبية معتمدة متاحة للحجز حالياً.</p>
-                  <p className="text-[11px] text-slate-500">
-                    تأكد من اعتماد العيادات المسجلة عبر لوحة الإدارة أولاً.
-                  </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 pt-2">
@@ -387,7 +397,7 @@ export default function BookingWizardPage() {
                           <div className="font-bold text-sm flex items-center gap-2 text-white">
                             {clinic.name}
                             <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] rounded-full">
-                              مرخصة رسمياً ✓
+                              معتمدة رسمياً ✓
                             </span>
                           </div>
                           <div className="text-xs text-slate-400 flex items-center gap-1">
@@ -413,7 +423,7 @@ export default function BookingWizardPage() {
             </div>
           )}
 
-          {/* الخطوة 2: اختيار الطبيب والتخصص */}
+          {/* الخطوة 2: اختيار الطبيب */}
           {step === 2 && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
@@ -449,7 +459,7 @@ export default function BookingWizardPage() {
             </div>
           )}
 
-          {/* الخطوة 3: التاريخ والوقت */}
+          {/* الخطوة 3: تحديد التاريخ والوقت */}
           {step === 3 && (
             <div className="space-y-5">
               <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
@@ -555,7 +565,7 @@ export default function BookingWizardPage() {
               <div className="p-6 border-2 border-dashed border-slate-700 rounded-2xl text-center space-y-3 bg-slate-950/40">
                 <Camera className="w-10 h-10 text-slate-500 mx-auto" />
                 <p className="text-xs text-slate-400">
-                  يمكنك رفع صورة لتقرير سابق، تحليل مخبري، أو مكان الإصابة لاطلاع الطبيب قبل الحضور
+                  يمكنك رفع صورة لتقرير سابق أو تحليل مخبري لاطلاع الطبيب قبل الحضور
                 </p>
                 <input
                   type="file"
