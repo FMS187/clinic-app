@@ -9,7 +9,8 @@ import {
   Loader2, Mail, Settings, CheckCircle2, Edit3, Check,
   DollarSign, Activity, MapPin, Power, RefreshCw, CreditCard,
   AlertTriangle, Receipt, ArrowDownCircle, MessageSquareShare, 
-  Tag, TrendingUp, UserCheck, ArrowUpRight, BarChart3, Filter
+  Tag, TrendingUp, UserCheck, ArrowUpRight, BarChart3, Filter,
+  FileCheck, XCircle, ExternalLink
 } from 'lucide-react';
 
 interface Facility {
@@ -28,6 +29,19 @@ interface Facility {
   is_suspended?: boolean;
 }
 
+interface PendingTenant {
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  phone: string;
+  license_number: string;
+  license_document_url: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string;
+  created_at?: string;
+}
+
 export default function SuperAdminDashboard() {
   const [user, setUser] = useState<any>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
@@ -41,6 +55,7 @@ export default function SuperAdminDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'billing' | 'cancelled_audit' | 'facilities' | 'bookings' | 'analytics' | 'coupons' | 'settings'>('overview');
 
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [pendingTenants, setPendingTenants] = useState<PendingTenant[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [runningCron, setRunningCron] = useState(false);
@@ -50,7 +65,7 @@ export default function SuperAdminDashboard() {
   const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
   const [bookingSearch, setBookingSearch] = useState('');
 
-  // إضافة منشأة جديدة
+  // إضافة منشأة جديدة يدوياً
   const [showAddFacilityModal, setShowAddFacilityModal] = useState(false);
   const [newFac, setNewFac] = useState({
     name: '',
@@ -75,13 +90,18 @@ export default function SuperAdminDashboard() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [recordingPayment, setRecordingPayment] = useState(false);
 
+  // نافذة رفض ترخيص منشأة
+  const [rejectingTenant, setRejectingTenant] = useState<PendingTenant | null>(null);
+  const [rejectionReasonText, setRejectionReasonText] = useState('');
+  const [processingTenantId, setProcessingTenantId] = useState<string | null>(null);
+
   // فحص الحسابات التلقائي
   const runAutoAuditAndFetch = async () => {
     setRunningCron(true);
     try {
       await fetch('/api/cron/auto-complete').catch(() => {});
       await fetchAllPlatformData();
-      setCronSuccessMsg('تم فحص ومطابقة الحسابات المالية بنجاح.');
+      setCronSuccessMsg('تم فحص ومطابقة الحسابات المالية وتحديث المنشآت بنجاح.');
       setTimeout(() => setCronSuccessMsg(''), 4000);
     } catch (e) {
       console.log('Error triggering cron', e);
@@ -106,11 +126,27 @@ export default function SuperAdminDashboard() {
   const fetchAllPlatformData = async () => {
     setLoadingData(true);
     try {
-      const { data: facs } = await supabase.from('ClinicFacility').select('*').order('created_at', { ascending: false });
-      const { data: books } = await supabase.from('Booking').select('*').order('booking_date', { ascending: false });
+      // 1. جلب المنشآت المعتمدة النشطة
+      const { data: facs } = await supabase
+        .from('ClinicFacility')
+        .select('*')
+        .order('name', { ascending: true });
+
+      // 2. جلب الحجوزات
+      const { data: books } = await supabase
+        .from('Booking')
+        .select('*')
+        .order('booking_date', { ascending: false });
+
+      // 3. جلب طلبات تسجيل العيادات والتراخيص
+      const { data: tenantsData } = await supabase
+        .from('tenants')
+        .select('*')
+        .order('name', { ascending: true });
 
       if (facs) setFacilities(facs);
       if (books) setBookings(books);
+      if (tenantsData) setPendingTenants(tenantsData as PendingTenant[]);
     } catch (e) {
       console.log('Error fetching platform data', e);
     }
@@ -133,6 +169,129 @@ export default function SuperAdminDashboard() {
     setUser(null);
   };
 
+  // اعتماد منشأة مسجلة ونقلها تلقائياً لدليل المنشآت النشطة وإرسال واتساب
+  const handleApproveTenant = async (tenant: PendingTenant) => {
+    setProcessingTenantId(tenant.id);
+
+    try {
+      let cleanPhone = (tenant.phone || '').replace(/[^0-9]/g, '');
+      if (cleanPhone.startsWith('967')) cleanPhone = cleanPhone.slice(3);
+      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
+
+      // 1. تحديث حالتها في جدول tenants إلى approved
+      const { error: tenantErr } = await supabase
+        .from('tenants')
+        .update({
+          status: 'approved',
+          verified_at: new Date().toISOString(),
+          rejection_reason: null
+        })
+        .eq('id', tenant.id);
+
+      if (tenantErr) throw tenantErr;
+
+      // 2. نقل أو إدخال المنشأة في جدول ClinicFacility لتظهر في دليل المنشآت وصفحة الحجز
+      const newFacilityRecord = {
+        name: tenant.name,
+        city: tenant.city || 'صنعاء',
+        district: '',
+        address: tenant.address || 'اليمن',
+        phone: cleanPhone,
+        whatsapp_number: cleanPhone,
+        facility_type: 'clinic',
+        commission_rate: 2.0,
+        credit_limit: 50.0,
+        current_debt: 0.0,
+        is_active: true,
+        wallets_info: { kuraimi: '', onecash: '' }
+      };
+
+      const { data: createdFac, error: facErr } = await supabase
+        .from('ClinicFacility')
+        .insert([newFacilityRecord])
+        .select()
+        .single();
+
+      // تحديث الواجهة
+      setPendingTenants(prev => prev.map(t => t.id === tenant.id ? { ...t, status: 'approved' } : t));
+      if (createdFac) {
+        setFacilities(prev => [createdFac, ...prev]);
+      }
+
+      // 3. فتح رسالة واتساب آلية للمنشأة تفيد بالاعتماد
+      const targetPhone = '967' + cleanPhone;
+      const approvalMsg = encodeURIComponent(
+        `السلام عليكم إدارة (${tenant.name})،\n` +
+        `تهانينا! نود إبلاغكم بأنه تم التحقق من ترخيصكم الطبي رقم (${tenant.license_number || 'المعتمد'}) واكتمال اعتماد منشأتكم رسمياً في منصة الحجوزات الطبية.\n` +
+        `• حالة الحساب: نشط ومعتمد ✓\n` +
+        `• عمولة المنصة: $2 لكل كشف\n` +
+        `• تم تفعيل ظهور عيادتكم للمرضى في شاشات البحث والحجز المباشر.\n\n` +
+        `أهلاً بكم معنا شركاء النجاح!`
+      );
+
+      window.open(`https://api.whatsapp.com/send?phone=${targetPhone}&text=${approvalMsg}`, '_blank');
+      alert(`تم اعتماد منشأة (${tenant.name}) بنجاح وتم فتح رسالة الواتساب الترحيبية.`);
+    } catch (err: any) {
+      alert(`خطأ أثناء الاعتماد: ${err.message}`);
+    } finally {
+      setProcessingTenantId(null);
+    }
+  };
+
+  // رفض ترخيص منشأة مع توضيح السبب وإرسال واتساب فوري
+  const handleConfirmRejectTenant = async () => {
+    if (!rejectingTenant) return;
+    if (!rejectionReasonText.trim()) {
+      alert('يرجى كتابة سبب رفض الترخيص لإرساله للمنشأة عبر الواتساب.');
+      return;
+    }
+
+    setProcessingTenantId(rejectingTenant.id);
+
+    try {
+      const { error } = await supabase
+        .from('tenants')
+        .update({
+          status: 'rejected',
+          rejection_reason: rejectionReasonText.trim(),
+          verified_at: new Date().toISOString()
+        })
+        .eq('id', rejectingTenant.id);
+
+      if (error) throw error;
+
+      // تحديث الحالة في الواجهة
+      setPendingTenants(prev => prev.map(t => t.id === rejectingTenant.id ? {
+        ...t,
+        status: 'rejected',
+        rejection_reason: rejectionReasonText.trim()
+      } : t));
+
+      // تجهيز رسالة الواتساب بالسبب
+      let cleanPhone = (rejectingTenant.phone || '').replace(/[^0-9]/g, '');
+      if (cleanPhone.startsWith('967')) cleanPhone = cleanPhone.slice(3);
+      if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.slice(1);
+      const targetPhone = '967' + cleanPhone;
+
+      const rejectMsg = encodeURIComponent(
+        `السلام عليكم إدارة (${rejectingTenant.name})،\n` +
+        `بخصوص طلب انضمامكم إلى المنصة الطبية، نأسف لإبلاغكم بأن طلب الترخيص قوبل بالملاحظات التالية:\n` +
+        `⚠️ سبب الرفض / عدم المطابقة:\n"${rejectionReasonText.trim()}"\n\n` +
+        `يرجى تعديل البيانات أو تزويدنا بوثيقة ترخيص سارية المفعول لنتمكن من إعادة تفعيل الحساب.`
+      );
+
+      window.open(`https://api.whatsapp.com/send?phone=${targetPhone}&text=${rejectMsg}`, '_blank');
+
+      setRejectingTenant(null);
+      setRejectionReasonText('');
+      alert('تم توثيق الرفض وفتح نافذة الواتساب لإشعار المنشأة بالسبب.');
+    } catch (err: any) {
+      alert(`خطأ: ${err.message}`);
+    } finally {
+      setProcessingTenantId(null);
+    }
+  };
+
   // تبديل حالة المنشأة (تفعيل / إيقاف)
   const toggleFacilityStatus = async (fac: Facility) => {
     const newStatus = !fac.is_active;
@@ -146,7 +305,7 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // إضافة منشأة جديدة
+  // إضافة منشأة جديدة يدوياً
   const handleCreateFacility = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFac.name.trim()) return;
@@ -331,6 +490,11 @@ export default function SuperAdminDashboard() {
     return { totalFacilities, totalUncollectedDebt, completedBookings, totalEarnedRevenue };
   }, [facilities, bookings]);
 
+  // قائمة طلبات التراخيص التي تحتاج مراجعة
+  const pendingVerificationsCount = useMemo(() => {
+    return pendingTenants.filter(t => t.status === 'pending').length;
+  }, [pendingTenants]);
+
   // الحجوزات بعد الفلترة والبحث
   const filteredBookingsList = useMemo(() => {
     return bookings.filter(b => {
@@ -398,7 +562,7 @@ export default function SuperAdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex">
+    <div className="min-h-screen bg-slate-100 flex" dir="rtl">
       <DashboardSidebar
         role="admin"
         activeTab={activeTab}
@@ -426,7 +590,7 @@ export default function SuperAdminDashboard() {
               {activeTab === 'coupons' && 'إدارة العروض والكوبونات'}
               {activeTab === 'settings' && 'إعدادات المنصة المركزية'}
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">غرفة عمليات الوساطة الطبية وإدارة السيولة</p>
+            <p className="text-xs text-slate-400 mt-0.5">غرفة عمليات الوساطة الطبية وإدارة السيولة والتراخيص</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -457,7 +621,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 1. المؤشرات التفاعلية (قابلة للنقر) */}
+        {/* 1. المؤشرات التفاعلية */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -475,7 +639,7 @@ export default function SuperAdminDashboard() {
                   <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition" />
                 </div>
                 <span className="text-3xl font-black text-emerald-600 font-mono mt-1 block">${stats.totalEarnedRevenue}</span>
-                <span className="text-[11px] text-slate-500 block mt-1">عن {stats.completedBookings} كشفاً مكتملاً (انقر للعرض)</span>
+                <span className="text-[11px] text-slate-500 block mt-1">عن {stats.completedBookings} كشفاً مكتملاً</span>
               </button>
 
               <button
@@ -488,7 +652,7 @@ export default function SuperAdminDashboard() {
                   <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-rose-600 transition" />
                 </div>
                 <span className="text-3xl font-black text-rose-600 font-mono mt-1 block">${stats.totalUncollectedDebt}</span>
-                <span className="text-[11px] text-slate-500 block mt-1">عمولات لم تسدد بعد (انقر للتحصيل)</span>
+                <span className="text-[11px] text-slate-500 block mt-1">عمولات لم تسدد بعد</span>
               </button>
 
               <button
@@ -501,7 +665,9 @@ export default function SuperAdminDashboard() {
                   <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-teal-600 transition" />
                 </div>
                 <span className="text-3xl font-black text-slate-900 font-mono mt-1 block">{stats.totalFacilities}</span>
-                <span className="text-[11px] text-teal-700 block mt-1">مستشفيات ومراكز (انقر للإدارة)</span>
+                <span className="text-[11px] text-teal-700 block mt-1">
+                  {pendingVerificationsCount > 0 ? `⚠️ يوجد (${pendingVerificationsCount}) بانتظار الاعتماد` : 'جميع المنشآت معتمدة'}
+                </span>
               </button>
 
               <button
@@ -514,7 +680,7 @@ export default function SuperAdminDashboard() {
                   <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-amber-600 transition" />
                 </div>
                 <span className="text-3xl font-black text-amber-600 font-mono mt-1 block">{cancelledBookings.length}</span>
-                <span className="text-[11px] text-slate-500 block mt-1">بحاجة للتدقيق الهاتفي (انقر للمعاينة)</span>
+                <span className="text-[11px] text-slate-500 block mt-1">بحاجة للتدقيق الهاتفي</span>
               </button>
 
             </div>
@@ -563,7 +729,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 2. تحليلات حركة الدخول والاستخدام (Traffic & Usage Analytics) */}
+        {/* 2. تحليلات حركة الدخول والاستخدام */}
         {activeTab === 'analytics' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -628,82 +794,181 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
-        {/* 3. دليل وإدارة المنشآت مع إضافة منشأة جديدة */}
+        {/* 3. دليل وإدارة المنشآت مع فحص التراخيص والاعتماد التلقائي */}
         {activeTab === 'facilities' && (
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <div>
-                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-teal-600" /> دليل المنشآت الطبية المتعاقدة ({facilities.length})
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">يمكنك إضافة منشآت جديدة، وتعديل نسب العمولات والحدود الائتمانية</p>
-              </div>
+          <div className="space-y-6">
 
-              <button
-                type="button"
-                onClick={() => setShowAddFacilityModal(true)}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-teal-600/20"
-              >
-                <Plus className="w-4 h-4" /> إضافة منشأة جديدة
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {facilities.map(fac => (
-                <div key={fac.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-bold text-slate-900">{fac.name}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">{fac.city} - {fac.address || 'اليمن'}</p>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${fac.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                      {fac.is_active !== false ? 'مفعل' : 'موقف'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-white p-2.5 rounded-xl border border-slate-200">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">العمولة:</span>
-                      <strong className="text-teal-700">${fac.commission_rate || 2.0}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">السقف:</span>
-                      <strong className="text-slate-800">${fac.credit_limit || 50.0}</strong>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setEditingFac(fac);
-                        setEditCommissionRate(fac.commission_rate || 2.0);
-                        setEditCreditLimit(fac.credit_limit || 50.0);
-                      }}
-                      className="flex-1 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition"
-                    >
-                      ضبط الشروط
-                    </button>
-
-                    <button
-                      onClick={() => toggleFacilityStatus(fac)}
-                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
-                        fac.is_active !== false ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                      }`}
-                    >
-                      {fac.is_active !== false ? 'إيقاف' : 'تفعيل'}
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteFacility(fac.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-xl transition border border-slate-200"
-                      title="حذف المنشأة"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+            {/* قسم طلبات التراخيص الجديدة التي تحتاج موافقة المالك */}
+            {pendingTenants.filter(t => t.status === 'pending').length > 0 && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 shadow-sm space-y-4">
+                <div className="flex justify-between items-center border-b border-amber-200 pb-3">
+                  <div>
+                    <h2 className="text-base font-black text-amber-950 flex items-center gap-2">
+                      <FileCheck className="w-5 h-5 text-amber-600" /> 
+                      طلبات انضمام وتراخيص جديدة بانتظار موافقتك ({pendingTenants.filter(t => t.status === 'pending').length})
+                    </h2>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      بمجرد الموافقة، ستنزل المنشأة تلقائياً في دليلك أدناه وتظهر فوراً للمرضى مع إشعار المنشأة بالواتساب
+                    </p>
                   </div>
                 </div>
-              ))}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {pendingTenants.filter(t => t.status === 'pending').map(tenant => {
+                    const isProcessing = processingTenantId === tenant.id;
+                    const hasDoc = tenant.license_document_url && tenant.license_document_url !== 'pending-document';
+
+                    return (
+                      <div key={tenant.id} className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h3 className="font-black text-slate-900 text-sm">{tenant.name}</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">{tenant.city} - {tenant.address}</p>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                            قيد المراجعة ⏳
+                          </span>
+                        </div>
+
+                        <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">رقم الترخيص:</span>
+                            <strong className="font-mono text-slate-800">{tenant.license_number || 'غير مدخل'}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">هاتف التواصل:</span>
+                            <strong className="font-mono text-slate-800">{tenant.phone}</strong>
+                          </div>
+                          <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                            <span className="text-slate-500">ملف الترخيص:</span>
+                            {hasDoc ? (
+                              <a
+                                href={tenant.license_document_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-teal-700 font-bold hover:underline"
+                              >
+                                معاينة الوثيقة <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">لا يوجد ملف مرفق</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleApproveTenant(tenant)}
+                            disabled={isProcessing}
+                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            {isProcessing ? 'جارٍ الاعتماد...' : 'اعتماد وإشعار بالواتساب'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRejectingTenant(tenant);
+                              setRejectionReasonText('');
+                            }}
+                            disabled={isProcessing}
+                            className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> رفض
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* دليل المنشآت الطبية المتعاقدة */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b pb-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-teal-600" /> دليل المنشآت الطبية المتعاقدة ({facilities.length})
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">المنشآت النشطة التي تظهر للمرضى في شاشات الحجز</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddFacilityModal(true)}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-teal-600/20"
+                >
+                  <Plus className="w-4 h-4" /> إضافة منشأة جديدة
+                </button>
+              </div>
+
+              {facilities.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  لا توجد منشآت مفعلة حالياً. اعتمد طلباً من الطلبات المعلقة أعلاه لتنزل هنا تلقائياً.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {facilities.map(fac => (
+                    <div key={fac.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-bold text-slate-900">{fac.name}</h3>
+                          <p className="text-xs text-slate-500 mt-0.5">{fac.city} - {fac.address || 'اليمن'}</p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${fac.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                          {fac.is_active !== false ? 'مفعل' : 'موقف'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">العمولة:</span>
+                          <strong className="text-teal-700">${fac.commission_rate || 2.0}</strong>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 block">السقف:</span>
+                          <strong className="text-slate-800">${fac.credit_limit || 50.0}</strong>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingFac(fac);
+                            setEditCommissionRate(fac.commission_rate || 2.0);
+                            setEditCreditLimit(fac.credit_limit || 50.0);
+                          }}
+                          className="flex-1 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition"
+                        >
+                          ضبط الشروط
+                        </button>
+
+                        <button
+                          onClick={() => toggleFacilityStatus(fac)}
+                          className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition ${
+                            fac.is_active !== false ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {fac.is_active !== false ? 'إيقاف' : 'تفعيل'}
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteFacility(fac.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded-xl transition border border-slate-200"
+                          title="حذف المنشأة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
           </div>
         )}
 
@@ -966,7 +1231,49 @@ export default function SuperAdminDashboard() {
 
       </main>
 
-      {/* نافذة إضافة منشأة جديدة */}
+      {/* نافذة تحديد سبب رفض الترخيص */}
+      {rejectingTenant && (
+        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right">
+            <div className="flex items-center gap-2 text-rose-600 font-bold text-base border-b pb-2">
+              <XCircle className="w-5 h-5" />
+              رفض ترخيص ({rejectingTenant.name})
+            </div>
+            <p className="text-xs text-slate-500">
+              اكتب سبب الرفض بوضوح ليتم تضمينه تلقائياً في رسالة الواتساب الموجهة للمنشأة:
+            </p>
+
+            <textarea
+              rows={4}
+              value={rejectionReasonText}
+              onChange={(e) => setRejectionReasonText(e.target.value)}
+              placeholder="مثال: رقم الترخيص غير مطابق للملف، أو انتهت صلاحية السجل الطبي."
+              className="w-full p-3 border border-slate-300 rounded-xl text-xs outline-none focus:border-rose-500"
+            />
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectingTenant(null)}
+                className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold"
+              >
+                إلغاء
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmRejectTenant}
+                disabled={processingTenantId === rejectingTenant.id}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1"
+              >
+                {processingTenantId === rejectingTenant.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'تأكيد وإرسال واتساب'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة إضافة منشأة جديدة يدوياً */}
       {showAddFacilityModal && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-right max-h-[90vh] overflow-y-auto">
