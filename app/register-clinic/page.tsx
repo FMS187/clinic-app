@@ -2,13 +2,12 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function RegisterClinicPage() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
 
-  // متغيرات حفظ البيانات المدخلة في الفورم
+  // متغيرات حفظ البيانات المدخلة في النموذج
   const [clinicName, setClinicName] = useState('');
   const [managerName, setManagerName] = useState('');
   const [email, setEmail] = useState('');
@@ -38,12 +37,12 @@ export default function RegisterClinicPage() {
     setLoading(true);
 
     try {
-      // التحقق من رفع وثيقة الترخيص
+      // 1. التأكد من اختيار ملف الترخيص الطبي
       if (!licenseFile) {
         throw new Error('يرجى إرفاق صورة أو وثيقة الترخيص الطبي الرسمية');
       }
 
-      // 1. تسجيل الحساب للمدير في نظام المصادقة (Auth)
+      // 2. تسجيل الحساب الجديد في Supabase Auth للمدير
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email,
         password: password,
@@ -66,7 +65,7 @@ export default function RegisterClinicPage() {
 
       const userId = authData.user.id;
 
-      // 2. رفع وثيقة الترخيص الطبي لمجلد التخزين (Storage Bucket)
+      // 3. رفع وثيقة الترخيص لمجلد التخزين clinic-licenses
       const fileExtension = licenseFile.name.split('.').pop();
       const uniqueFileName = `${userId}-${Date.now()}.${fileExtension}`;
       const filePath = `licenses/${uniqueFileName}`;
@@ -79,14 +78,14 @@ export default function RegisterClinicPage() {
         throw uploadError;
       }
 
-      // 3. استخراج الرابط العام للوثيقة
+      // 4. استخراج رابط وثيقة الترخيص
       const { data: publicUrlData } = supabase.storage
         .from('clinic-licenses')
         .getPublicUrl(filePath);
 
       const finalDocumentUrl = publicUrlData ? publicUrlData.publicUrl : filePath;
 
-      // 4. إدخال المنشأة الجديدة في جدول tenants بحالة قيد المراجعة (pending)
+      // 5. حفظ المنشأة الطبية في جدول tenants مع حالة قيد المراجعة pending
       const { data: tenantData, error: tenantError } = await supabase
         .from('tenants')
         .insert([
@@ -107,7 +106,7 @@ export default function RegisterClinicPage() {
         throw tenantError;
       }
 
-      // 5. ربط حساب المدير الحالي بالمنشأة عبر جدول profiles
+      // 6. ربط المدير الحالي بالمنشأة عبر جدول profiles
       const { error: profileError } = await supabase
         .from('profiles')
         .insert([
@@ -156,7 +155,7 @@ export default function RegisterClinicPage() {
     );
   }
 
-  // شاشة فورم التسجيل
+  // نموذج تسجيل المنشأة
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8" dir="rtl">
       <div className="max-w-xl w-full bg-white p-8 sm:p-10 rounded-2xl shadow-lg border border-slate-100">
